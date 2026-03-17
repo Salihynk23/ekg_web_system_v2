@@ -109,15 +109,11 @@
 
       <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
         <button class="menu-btn" style="background: var(--ok); color:#03100c;" onclick="saveComment()">Kaydet</button>
-        <button class="menu-btn" onclick="toggleHistory()">📜 Eski Yorumlarumlar</button>
+        <button class="menu-btn" onclick="toggleHistory()">📜 Eski Yorumlarlar</button>
       </div>
 
-      <!-- (İstersen burada “Son kayıtlı yorum” kartı kalsın) -->
-      <div class="patient-card" style="margin-top:14px;">
-        <h3 style="margin:0 0 10px 0; color:var(--muted); font-size:13px;">Son Kayıtlı Yorum</h3>
-        <div id="latestCommentBox" style="white-space:pre-wrap; color: var(--text);">-</div>
-        <div id="latestCommentTime" style="margin-top:8px; color: var(--muted); font-size:12px;"></div>
-      </div>
+      
+      
 
       <!-- GEÇMİŞ -->
       <div id="historyWrap" class="patient-card hidden" style="margin-top:14px;">

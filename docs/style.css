@@ -232,9 +232,9 @@ body{
 
 /* ================= CONTENT ================= */
 .content{
-  position:relative;
-  padding:22px;
-  overflow:hidden;
+  position: relative;
+  padding: 72px 22px 22px 22px;
+  overflow: hidden;
 }
 
 /* ================= PAGE CONTROL ================= */
@@ -259,15 +259,16 @@ body{
 
 /* geri butonu */
 .back-btn{
-  position:absolute;
-  top:18px;
-  left:18px;
-  padding:10px 14px;
-  border-radius:12px;
-  border:1px solid var(--border);
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 20;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
   background: rgba(255,255,255,.10);
-  color:white;
-  cursor:pointer;
+  color: white;
+  cursor: pointer;
 }
 
 /* ================== PATIENT SELECT ================== */
