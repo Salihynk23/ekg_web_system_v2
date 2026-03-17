@@ -8,11 +8,11 @@ class UserCreate(BaseModel):
     password: str
     role: str  # "doctor" | "patient"
 
-    # hasta profili opsiyonel (register ekranda dolacak)
     full_name: Optional[str] = None
     age: Optional[int] = None
     height_cm: Optional[int] = None
     weight_kg: Optional[int] = None
+
 
 class UserOut(BaseModel):
     id: int
@@ -27,8 +27,10 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class UserMe(UserOut):
     pass
+
 
 # ---------- MEASUREMENTS ----------
 class MeasurementOut(BaseModel):
@@ -41,14 +43,31 @@ class MeasurementOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class LatestOut(BaseModel):
     temperature: float
     heart_rate: int
     ecg_value: float
 
+
+# ---------- ECG ----------
+class ECGCreate(BaseModel):
+    ecg_values: list[float]
+
+
+class ECGOut(BaseModel):
+    id: int
+    timestamp: datetime
+    ecg_values: list[float]
+
+    class Config:
+        from_attributes = True
+
+
 # ---------- COMMENTS ----------
 class CommentCreate(BaseModel):
     comment_text: str
+
 
 class CommentOut(BaseModel):
     id: int
@@ -59,13 +78,12 @@ class CommentOut(BaseModel):
 
     class Config:
         from_attributes = True
-# schemas.py içine ekle
 
-from pydantic import BaseModel
-from datetime import datetime
 
+# ---------- DOCTOR COMMENTS ----------
 class DoctorCommentCreate(BaseModel):
     comment_text: str
+
 
 class DoctorCommentOut(BaseModel):
     id: int
@@ -77,5 +95,6 @@ class DoctorCommentOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class DoctorCommentLatestOut(BaseModel):
-    comment: DoctorCommentOut | None
+    comment: Optional[DoctorCommentOut]

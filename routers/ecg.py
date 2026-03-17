@@ -21,7 +21,7 @@ def get_db():
 
 
 # ✅ EKG KAYDET
-@router.post("/", response_model=schemas.ECGOut)
+@router.post("/")
 def create_ecg(
     ecg: schemas.ECGCreate,
     db: Session = Depends(get_db),
