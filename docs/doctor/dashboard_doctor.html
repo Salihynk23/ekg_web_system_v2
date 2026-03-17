@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Doktor Paneli</title>
+
+  <!-- doctor klasörünün içindeyse -->
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<div class="dashboard-layout">
+
+  <!-- SOL PANEL -->
+  <aside class="sidebar">
+
+    <!-- DOKTOR BİLGİ (BOZMA) -->
+    <div class="patient-card">
+      <h3>👨‍⚕️ Doktor</h3>
+      <p style="color: var(--muted); margin:6px 0;">Giriş: <span id="docInfo">Yükleniyor...</span></p>
+    </div>
+
+    <!-- HASTA SEÇİM -->
+    <div class="patient-card patient-select-card">
+      <h3>🧍 Hasta Seçimi</h3>
+
+      <select id="patientSelect" onchange="onPatientChange()">
+        <option value="">— Hasta seçiniz —</option>
+      </select>
+
+      <div id="patientInfo" class="patient-status" style="margin-top:10px; color: var(--muted);">
+        Henüz hasta seçilmedi.
+      </div>
+    </div>
+
+    <!-- HASTA BİLGİ KARTI -->
+    <div id="patientDetailCard" class="patient-card hidden">
+      <h3>📋 Hasta Bilgileri</h3>
+      <p><strong>Kullanıcı:</strong> <span id="pUsername">-</span></p>
+      <p><strong>ID:</strong> <span id="pId">-</span></p>
+      <p><strong>Rol:</strong> <span id="pRole">-</span></p>
+    </div>
+
+    <!-- MENÜ (hasta seçilince açılır) -->
+    <div id="doctorMenu" class="menu hidden">
+      <button class="menu-btn" onclick="showSection('ekg')">EKG</button>
+      <button class="menu-btn" onclick="showSection('hr')">Nabız</button>
+      <button class="menu-btn" onclick="showSection('temp')">Sıcaklık</button>
+      <button class="menu-btn" onclick="showSection('ai')">AI Teşhisi</button>
+      <button class="menu-btn" onclick="showSection('comment')">Doktor Yorumu</button>
+      <button class="menu-btn" onclick="logout()">Çıkış</button>
+    </div>
+
+  </aside>
+
+  <!-- SAĞ PANEL -->
+  <main class="content">
+
+    <button id="backBtn" class="back-btn hidden" onclick="goHome()">← Geri</button>
+
+    <!-- HOME -->
+    <section id="home" class="page active">
+      <div class="center-screen">
+        <div>
+          <h2>🩺 Doktor Paneline Hoş Geldin</h2>
+          <p style="color: var(--muted); max-width:520px;">
+            Soldan bir hasta seçtiğinde menü açılacak ve verileri görüntüleyebileceksin.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- EKG -->
+    <section id="ekg" class="page">
+      <h2>EKG</h2>
+      <p style="color: var(--muted);">Bu bölüm (sonraki adım) — seçilen hastanın EKG grafiği.</p>
+    </section>
+
+    <!-- HR -->
+    <section id="hr" class="page">
+      <h2>Nabız</h2>
+      <p style="color: var(--muted);">Bu bölüm (sonraki adım) — seçilen hastanın nabız grafiği.</p>
+    </section>
+
+    <!-- TEMP -->
+    <section id="temp" class="page">
+      <h2>Sıcaklık</h2>
+      <p style="color: var(--muted);">Bu bölüm (sonraki adım) — seçilen hastanın sıcaklık grafiği.</p>
+    </section>
+
+    <!-- AI -->
+    <section id="ai" class="page">
+      <h2>🧠 AI Teşhisi</h2>
+      <p style="color: var(--muted);">Bu bölüm (sonraki adım) — seçilen hastaya ait AI çıktısı.</p>
+    </section>
+
+    <!-- COMMENT -->
+    <section id="comment" class="page">
+      <h2>📝 Doktor Yorumu</h2>
+
+      <div class="patient-card" style="margin-bottom:12px;">
+        <p style="margin:0; color:var(--muted); font-size:13px;">
+          Seçili hasta: <strong><span id="selectedPatientLabel">-</span></strong>
+        </p>
+      </div>
+
+      <textarea id="doctorText" class="textarea" placeholder="Hastaya yorum yaz..."></textarea>
+
+      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="menu-btn" style="background: var(--ok); color:#03100c;" onclick="saveComment()">Kaydet</button>
+        <button class="menu-btn" onclick="toggleHistory()">📜 Eski Yorumlarumlar</button>
+      </div>
+
+      <!-- (İstersen burada “Son kayıtlı yorum” kartı kalsın) -->
+      <div class="patient-card" style="margin-top:14px;">
+        <h3 style="margin:0 0 10px 0; color:var(--muted); font-size:13px;">Son Kayıtlı Yorum</h3>
+        <div id="latestCommentBox" style="white-space:pre-wrap; color: var(--text);">-</div>
+        <div id="latestCommentTime" style="margin-top:8px; color: var(--muted); font-size:12px;"></div>
+      </div>
+
+      <!-- GEÇMİŞ -->
+      <div id="historyWrap" class="patient-card hidden" style="margin-top:14px;">
+        <h3 style="margin:0 0 10px 0; color:var(--muted); font-size:13px;">📜 Eski Yorumlar</h3>
+        <div id="historyList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="dashboard_doctor.js"></script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>EKG İzleme Sistemi</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="login-page">
+  <div class="login-card">
+
+    <h1 class="login-title">EKG İzleme Sistemi</h1>
+    <p class="login-subtitle">Lütfen giriş türünü seçiniz</p>
+
+    <div class="role-buttons">
+      <button class="role-btn" onclick="selectRole('doctor', this)">👨‍⚕️ Doktor</button>
+      <button class="role-btn" onclick="selectRole('patient', this)">🧍 Hasta</button>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="loginForm" class="login-form hidden">
+      <h2 id="formTitle"></h2>
+
+      <input type="text" id="username" placeholder="Kullanıcı adı">
+      <input type="password" id="password" placeholder="Şifre">
+
+      <button class="login-btn" onclick="login()">Giriş Yap</button>
+
+      <div style="text-align:center; margin-top:10px;">
+        <button class="link-btn" onclick="showRegister()">Üye Ol</button>
+      </div>
+    </div>
+
+    <!-- REGISTER -->
+    <div id="registerForm" class="login-form hidden">
+      <h2>📝 Hasta Üyelik</h2>
+
+      <input type="text" id="r_fullname" placeholder="Ad Soyad">
+      <input type="number" id="r_age" placeholder="Yaş">
+      <input type="number" id="r_height" placeholder="Boy (cm)">
+      <input type="number" id="r_weight" placeholder="Kilo (kg)">
+
+      <hr style="opacity:.2">
+
+      <input type="text" id="r_username" placeholder="Kullanıcı adı">
+      <input type="password" id="r_password" placeholder="Şifre">
+
+      <button class="login-btn" onclick="register()">Üye Ol</button>
+
+      <div style="text-align:center; margin-top:10px;">
+        <button class="link-btn" onclick="backToLogin()">Geri dön</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="login.js"></script>
+</body>
+</html>

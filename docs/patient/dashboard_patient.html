@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Hasta Paneli</title>
+
+  <link rel="stylesheet" href="../style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<div class="dashboard-layout">
+
+  <!-- SOL PANEL -->
+  <aside class="sidebar">
+    <div class="patient-card">
+      <h3>🧍 Hasta Bilgileri</h3>
+      <p><strong>Kullanıcı:</strong> <span id="pUsername">-</span></p>
+      <p><strong>ID:</strong> <span id="pId">-</span></p>
+
+      <hr style="opacity:.15; margin:12px 0">
+
+      <p style="margin:6px 0; color: var(--muted); font-size:13px;">
+        Ad Soyad: <span id="pFullname">-</span>
+      </p>
+      <p style="margin:6px 0; color: var(--muted); font-size:13px;">
+        Yaş: <span id="pAge">-</span> | Boy: <span id="pHeight">-</span> | Kilo: <span id="pWeight">-</span>
+      </p>
+    </div>
+
+    <div class="menu">
+      <button class="menu-btn" onclick="showSection('ekg')">EKG</button>
+      <button class="menu-btn" onclick="showSection('hr')">Nabız</button>
+      <button class="menu-btn" onclick="showSection('temp')">Sıcaklık</button>
+      <button class="menu-btn" onclick="showSection('ai')">AI Teşhisi</button>
+      <button class="menu-btn" onclick="showSection('doctor')">Doktor Yorumu</button>
+      <button class="menu-btn" onclick="logout()">Çıkış</button>
+    </div>
+  </aside>
+
+  <!-- SAĞ PANEL -->
+  <main class="content">
+    <button id="backBtn" class="back-btn hidden" onclick="goHome()">← Geri</button>
+
+    <section id="home" class="page active">
+      <div class="center-screen">
+        <div>
+          <h2>🌿 Sağlıklı günler dileriz</h2>
+          <p style="color: var(--muted); margin-top:8px;">Sol menüden bir bölüm seçebilirsin.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="ekg" class="page">
+      <h2>EKG Grafiği</h2>
+      <div class="chart-wrap"><canvas id="ekgChart"></canvas></div>
+    </section>
+
+    <section id="hr" class="page">
+      <h2>Nabız Grafiği</h2>
+      <div class="chart-wrap"><canvas id="hrChart"></canvas></div>
+    </section>
+
+    <section id="temp" class="page">
+      <h2>Sıcaklık Grafiği</h2>
+      <div class="chart-wrap"><canvas id="tempChart"></canvas></div>
+    </section>
+
+    <section id="ai" class="page">
+      <h2>🧠 AI Teşhisi</h2>
+      <p style="color: var(--muted);">Şimdilik örnek ekran.</p>
+      <p><strong>Durum:</strong> Normal</p>
+      <p><strong>Risk:</strong> %3</p>
+    </section>
+
+    <!-- DOCTOR COMMENT -->
+    <section id="doctor" class="page">
+      <h2>🩺 Doktor Yorumu</h2>
+
+      <div class="patient-card" style="margin-top:10px;">
+        <p><strong>Son Yorum:</strong></p>
+        <p id="doctorCommentText" style="color: var(--muted); margin-top:8px;"></p>
+        <div id="doctorCommentTime" style="margin-top:8px; color: var(--muted); font-size:12px;"></div>
+
+        <div style="margin-top:10px;">
+          <button class="menu-btn" onclick="toggleMyHistory()">📜 Eski Yorumlar</button>
+        </div>
+      </div>
+
+      <div id="myHistoryWrap" class="patient-card hidden" style="margin-top:14px;">
+        <h3 style="margin:0 0 10px 0; color:var(--muted); font-size:13px;">📜 Eski Yorumlar</h3>
+        <div id="myHistoryList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="dashboard_patient.js"></script>
+</body>
+</html>

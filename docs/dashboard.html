@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>EKG Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+      <div class="container">
+      <div class="topbar">
+     <div>
+      <h1>Hasta Dashboard</h1>
+      <div id="patientName" style="font-size:14px; color:#94a3b8;">
+      Yükleniyor...
+      </div>
+     </div>
+      <button class="btn secondary" onclick="logout()">Çıkış</button>
+     </div>
+
+
+    <div class="cards">
+      <div class="card">
+        <div class="label">Son EKG</div>
+        <div id="lastEcg" class="value">-</div>
+      </div>
+      <div class="card">
+        <div class="label">Sıcaklık</div>
+        <div id="lastTemp" class="value">-</div>
+      </div>
+      <div class="card">
+        <div class="label">Nabız</div>
+        <div id="lastHr" class="value">-</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Canlı Grafik</h2>
+        <div class="btn-row">
+          <button class="btn" onclick="startLive()">Canlı Başlat</button>
+          <button class="btn danger" onclick="stopLive()">Durdur</button>
+          <button class="btn secondary" onclick="clearCharts()">Temizle</button>
+        </div>
+      </div>
+
+      <div class="charts">
+        <div class="chart-box">
+          <h3>EKG</h3>
+          <canvas id="ecgChart"></canvas>
+        </div>
+        <div class="chart-box">
+          <h3>Sıcaklık</h3>
+          <canvas id="tempChart"></canvas>
+        </div>
+        <div class="chart-box">
+          <h3>Nabız</h3>
+          <canvas id="hrChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Test</h2>
+        <div class="btn-row">
+          <button class="btn" onclick="generateFake(60)">60 sn sahte veri üret</button>
+          <button class="btn secondary" onclick="getLatest()">Son ölçümü çek</button>
+        </div>
+      </div>
+      <pre id="debug" class="debug"></pre>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,319 @@
+:root{
+  --bg:#0b1020;
+  --card:#121a33;
+  --card2:#0f1730;
+  --text:#e7eaf3;
+  --muted:#aab1c7;
+  --border: rgba(255,255,255,.10);
+  --btn:#2f6bff;
+  --ok:#00c896;
+}
+
+*{ box-sizing:border-box; }
+
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  background: radial-gradient(1200px 600px at 20% 0%, #17224a, var(--bg));
+  color:var(--text);
+}
+
+/* ================= LOGIN ================= */
+
+.login-page{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.login-card{
+  width:520px;
+  background: linear-gradient(180deg, var(--card), var(--card2));
+  border:1px solid var(--border);
+  border-radius:20px;
+  padding:28px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+
+.login-title{
+  margin:0 0 6px 0;
+  font-size:32px;
+  font-weight:800;
+}
+
+.login-subtitle{
+  margin-bottom:20px;
+  color:var(--muted);
+}
+
+/* ROL BUTONLARI */
+.role-buttons{
+  display:flex;
+  gap:16px;
+  justify-content:center;
+  margin-bottom:20px;
+}
+
+.role-btn{
+  width:220px;
+  padding:16px;
+  font-size:18px;
+  font-weight:700;
+  border-radius:16px;
+  border:1px solid var(--border);
+  background: rgba(255,255,255,.10);
+  color:white;
+  cursor:pointer;
+  transition:.2s ease;
+}
+
+.role-btn:hover{
+  transform: translateY(-2px);
+}
+
+.role-btn.active{
+  background: var(--btn);
+}
+
+/* LOGIN / REGISTER FORM */
+.login-form{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.login-form h2{
+  margin:10px 0;
+}
+
+.login-form input{
+  width:100%;
+  padding:12px;
+  border-radius:12px;
+  border:none;
+  background: rgba(0,0,0,.25);
+  color:var(--text);
+}
+
+.login-form input::placeholder{
+  color:var(--muted);
+}
+
+.login-btn{
+  padding:12px;
+  border-radius:12px;
+  border:none;
+  background: var(--ok);
+  font-weight:800;
+  cursor:pointer;
+}
+
+.login-btn:hover{
+  opacity:.95;
+}
+
+/* ayraç (register formu için) */
+.login-form hr{
+  border:none;
+  height:1px;
+  background: var(--border);
+  margin:6px 0;
+}
+
+/* ================= VISIBILITY ================= */
+.hidden{
+  display:none !important;
+}
+
+/* ================= LINK BUTTON ================= */
+.link-btn{
+  background:none;
+  border:none;
+  color: var(--btn);
+  font-weight:800;
+  cursor:pointer;
+}
+.link-btn:hover{
+  text-decoration: underline;
+}
+
+/* ================= FIX: Doctor dashboard UI eksikleri ================= */
+
+/* textarea sınıfı (doktor yorumu kutusu) */
+.textarea{
+  width: 100%;
+  min-height: 110px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.25);
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.textarea::placeholder{
+  color: var(--muted);
+}
+.textarea:focus{
+  border-color: var(--btn);
+  box-shadow: 0 0 0 3px rgba(47,107,255,.25);
+}
+
+/* Sağ tarafta içerik daha “kartlı” dursun */
+.content h2{
+  margin: 0 0 12px 0;
+  font-size: 26px;
+}
+.content p{
+  line-height: 1.5;
+}
+
+/* Küçük ekranlarda sidebar üst üste geçsin */
+@media (max-width: 900px){
+  .dashboard-layout{
+    grid-template-columns: 1fr;
+  }
+  .sidebar{
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+/* ================= DASHBOARD LAYOUT ================= */
+.dashboard-layout{
+  display:grid;
+  grid-template-columns: 280px 1fr;
+  min-height:100vh;
+}
+
+/* ================= SIDEBAR ================= */
+.sidebar{
+  background: linear-gradient(180deg, #0f1730, #0b1020);
+  border-right:1px solid var(--border);
+  padding:16px;
+}
+
+/* kartlar */
+.patient-card{
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:14px;
+  margin-bottom:16px;
+}
+
+.patient-card h3{
+  margin:0 0 10px 0;
+  font-size:14px;
+  color:var(--muted);
+}
+
+/* sol menü */
+.menu{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.menu-btn{
+  padding:12px;
+  border-radius:14px;
+  background: rgba(255,255,255,.10);
+  color:white;
+  border:none;
+  cursor:pointer;
+  font-weight:700;
+}
+.menu-btn:hover{
+  background: var(--btn);
+}
+
+/* ================= CONTENT ================= */
+.content{
+  position:relative;
+  padding:22px;
+  overflow:hidden;
+}
+
+/* ================= PAGE CONTROL ================= */
+.page{
+  display:none;
+  width:100%;
+  height:100%;
+}
+.page.active{
+  display:block;
+}
+
+/* karşılama ekranı */
+.center-screen{
+  width:100%;
+  height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+}
+
+/* geri butonu */
+.back-btn{
+  position:absolute;
+  top:18px;
+  left:18px;
+  padding:10px 14px;
+  border-radius:12px;
+  border:1px solid var(--border);
+  background: rgba(255,255,255,.10);
+  color:white;
+  cursor:pointer;
+}
+
+/* ================== PATIENT SELECT ================== */
+.patient-select-card select,
+select.select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.patient-select-card select:hover {
+  border-color: rgba(47,107,255,.6);
+}
+
+.patient-select-card select:focus {
+  border-color: var(--btn);
+  box-shadow: 0 0 0 3px rgba(47,107,255,.25);
+}
+
+.patient-status{
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ok);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-wrap{
+  width: 100%;
+  min-height: 320px;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  margin-top: 12px;
+}
+
+.chart-wrap canvas{
+  width: 100% !important;
+  height: 280px !important;
+}
