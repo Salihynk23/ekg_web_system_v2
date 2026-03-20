@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import engine, SessionLocal
 import models
 from routers import users, measurements, comments, ecg
+from auth import hash_password
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -15,7 +16,7 @@ def seed_demo_users():
         if not hasta:
             hasta = models.User(
                 username="hasta1",
-                password="1234",
+                password=hash_password("1234"),
                 role="patient",
                 full_name="Demo Hasta",
                 age=25,
@@ -28,7 +29,7 @@ def seed_demo_users():
         if not doktor:
             doktor = models.User(
                 username="doktor1",
-                password="1234",
+                password=hash_password("1234"),
                 role="doctor",
                 full_name="Demo Doktor",
                 age=40,

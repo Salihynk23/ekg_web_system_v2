@@ -9,8 +9,8 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
-    password = Column(String, nullable=False)
-    role = Column(String, nullable=False)  # "doctor" | "patient"
+    password = Column(String, nullable=False)   # hashli şifre burada tutulacak
+    role = Column(String, nullable=False)       # "doctor" | "patient"
 
     full_name = Column(String, nullable=True)
     age = Column(Integer, nullable=True)
@@ -23,7 +23,7 @@ class Measurement(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    kind = Column(String, index=True, nullable=False)
+    kind = Column(String, index=True, nullable=False)   # ecg / heart_rate / temperature
     value = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 

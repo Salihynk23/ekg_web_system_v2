@@ -4,7 +4,13 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 import models, schemas
 from database import SessionLocal
-from auth import create_access_token, get_current_user, require_role
+from auth import (
+    create_access_token,
+    get_current_user,
+    require_role,
+    hash_password,
+    verify_password,
+)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -23,9 +29,12 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Kullanıcı adı zaten var")
 
+    if user.role not in ["doctor", "patient"]:
+        raise HTTPException(status_code=400, detail="Rol sadece doctor veya patient olabilir")
+
     new_user = models.User(
         username=user.username,
-        password=user.password,
+        password=hash_password(user.password),
         role=user.role,
         full_name=getattr(user, "full_name", None),
         age=getattr(user, "age", None),
@@ -46,7 +55,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user:
         raise HTTPException(status_code=400, detail="Kullanıcı bulunamadı")
 
-    if user.password != form_data.password:
+    if not verify_password(form_data.password, user.password):
         raise HTTPException(status_code=400, detail="Şifre yanlış")
 
     access_token = create_access_token({"sub": user.username})
