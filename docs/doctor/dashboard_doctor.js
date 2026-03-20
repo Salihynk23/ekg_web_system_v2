@@ -137,10 +137,17 @@ window.onPatientChange = async function () {
     if (detailCard) detailCard.classList.add("hidden");
     if (info) info.textContent = "Henüz hasta seçilmedi.";
 
-    $("selectedPatientLabel").textContent = "-";
-    $("overviewPatientLabel").textContent = "-";
+    const selectedLabel = $("selectedPatientLabel");
+    if (selectedLabel) selectedLabel.textContent = "-";
 
     if ($("doctorText")) $("doctorText").value = "";
+
+    if (doctorChart) {
+      doctorChart.destroy();
+      doctorChart = null;
+    }
+    doctorActiveChartKey = null;
+
     goHome();
     return;
   }
@@ -155,11 +162,15 @@ window.onPatientChange = async function () {
   if (info) info.textContent = `✅ Aktif Hasta: ${selectedPatient.username} (id:${selectedPatient.id})`;
   if (detailCard) detailCard.classList.remove("hidden");
 
-  $("pUsername").textContent = `${selectedPatient.username}`;
-  $("pId").textContent = selectedPatient.id;
-  $("pRole").textContent = selectedPatient.role;
-  $("selectedPatientLabel").textContent = `${selectedPatient.username} (id:${selectedPatient.id})`;
-  $("overviewPatientLabel").textContent = `${selectedPatient.username} (id:${selectedPatient.id})`;
+  const pu = $("pUsername");
+  const pi = $("pId");
+  const pr = $("pRole");
+  const selectedLabel = $("selectedPatientLabel");
+
+  if (pu) pu.textContent = `${selectedPatient.username}`;
+  if (pi) pi.textContent = selectedPatient.id;
+  if (pr) pr.textContent = selectedPatient.role;
+  if (selectedLabel) selectedLabel.textContent = `${selectedPatient.username} (id:${selectedPatient.id})`;
 
   if (menu) menu.classList.remove("hidden");
 
@@ -205,6 +216,7 @@ window.goHome = function () {
   hideAllPages();
   const home = $("home");
   if (home) home.classList.add("active");
+
   const back = $("backBtn");
   if (back) back.classList.add("hidden");
 
@@ -231,17 +243,22 @@ async function loadPatientOverview() {
       headers: { Authorization: `Bearer ${TOKEN}` }
     });
 
+    const ekgEl = $("docLastEcg");
+    const tempEl = $("docLastTemp");
+    const hrEl = $("docLastHr");
+
     if (!res.ok) {
-      $("docLastEcg").textContent = "-";
-      $("docLastTemp").textContent = "-";
-      $("docLastHr").textContent = "-";
+      if (ekgEl) ekgEl.textContent = "-";
+      if (tempEl) tempEl.textContent = "-";
+      if (hrEl) hrEl.textContent = "-";
       return;
     }
 
     const data = await res.json();
-    $("docLastEcg").textContent = Number(data.ecg_value).toFixed(3);
-    $("docLastTemp").textContent = `${Number(data.temperature).toFixed(2)} °C`;
-    $("docLastHr").textContent = `${data.heart_rate} BPM`;
+
+    if (ekgEl) ekgEl.textContent = Number(data.ecg_value).toFixed(3);
+    if (tempEl) tempEl.textContent = `${Number(data.temperature).toFixed(2)} °C`;
+    if (hrEl) hrEl.textContent = `${data.heart_rate} BPM`;
 
   } catch (e) {
     console.error("overview error:", e);
