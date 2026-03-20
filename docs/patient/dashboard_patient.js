@@ -9,14 +9,34 @@ if (!TOKEN) {
 let me = null;
 let timer = null;
 let chart = null;
+let activeChartKey = null;
 
 const chartState = {
-  ekg: { points: [], windowSize: 40, sliderId: "ekgRange", infoId: "ekgRangeInfo" },
-  hr: { points: [], windowSize: 30, sliderId: "hrRange", infoId: "hrRangeInfo" },
-  temp: { points: [], windowSize: 30, sliderId: "tempRange", infoId: "tempRangeInfo" }
+  ekg: {
+    points: [],
+    windowSize: 40,
+    sliderId: "ekgRange",
+    infoId: "ekgRangeInfo",
+    autoFollow: true,
+    visibleSlice: []
+  },
+  hr: {
+    points: [],
+    windowSize: 30,
+    sliderId: "hrRange",
+    infoId: "hrRangeInfo",
+    autoFollow: true,
+    visibleSlice: []
+  },
+  temp: {
+    points: [],
+    windowSize: 30,
+    sliderId: "tempRange",
+    infoId: "tempRangeInfo",
+    autoFollow: true,
+    visibleSlice: []
+  }
 };
-
-let activeChartKey = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   await loadMeAndCheckRole();
@@ -102,7 +122,7 @@ window.showSection = function (id) {
   if (id === "doctor") loadDoctorComment();
 };
 
-/* ================= CHART ================= */
+/* ================= LIVE CHART ================= */
 function stopLive() {
   if (timer) {
     clearInterval(timer);
@@ -219,7 +239,11 @@ function bindRangeInputs() {
     if (!slider) return;
 
     slider.addEventListener("input", () => {
-      renderWindow(key, Number(slider.value));
+      const sliderValue = Number(slider.value);
+      const maxStart = Math.max(0, state.points.length - state.windowSize);
+
+      state.autoFollow = sliderValue >= maxStart;
+      renderWindow(key, sliderValue);
     });
   });
 }
@@ -238,7 +262,14 @@ function pushHistoryPoint(chartKey, value, timeStr = new Date().toISOString()) {
   }
 
   updateSlider(chartKey);
-  moveToLatestWindow(chartKey);
+
+  if (state.autoFollow) {
+    moveToLatestWindow(chartKey);
+  } else {
+    const slider = document.getElementById(state.sliderId);
+    const currentStart = Number(slider?.value || 0);
+    renderWindow(chartKey, currentStart);
+  }
 }
 
 function updateSlider(chartKey) {
@@ -248,6 +279,7 @@ function updateSlider(chartKey) {
 
   const maxStart = Math.max(0, state.points.length - state.windowSize);
   slider.max = maxStart;
+
   if (Number(slider.value) > maxStart) {
     slider.value = maxStart;
   }
@@ -260,6 +292,7 @@ function moveToLatestWindow(chartKey) {
 
   const maxStart = Math.max(0, state.points.length - state.windowSize);
   slider.value = maxStart;
+  state.autoFollow = true;
   renderWindow(chartKey, maxStart);
 }
 
@@ -350,6 +383,10 @@ async function startLiveECG() {
   }, 500);
 }
 
+window.goLiveWindow = function(chartKey) {
+  moveToLatestWindow(chartKey);
+};
+
 /* ================= DOCTOR COMMENT ================= */
 async function loadDoctorComment() {
   const box = document.getElementById("doctorCommentText");
@@ -385,30 +422,30 @@ async function loadDoctorComment() {
   }
 }
 
-window.toggleMyHistory = async function(){
+window.toggleMyHistory = async function () {
   const wrap = document.getElementById("myHistoryWrap");
   wrap.classList.toggle("hidden");
-  if(!wrap.classList.contains("hidden")){
+  if (!wrap.classList.contains("hidden")) {
     await loadMyHistory();
   }
 };
 
-async function loadMyHistory(){
+async function loadMyHistory() {
   const list = document.getElementById("myHistoryList");
   list.innerHTML = "Yükleniyor...";
 
-  try{
+  try {
     const res = await fetch(`${API_URL}/comments/me`, {
       headers: { Authorization: `Bearer ${TOKEN}` }
     });
 
-    if(!res.ok){
+    if (!res.ok) {
       list.innerHTML = "Geçmiş alınamadı.";
       return;
     }
 
     const rows = await res.json();
-    if(!rows.length){
+    if (!rows.length) {
       list.innerHTML = "Geçmiş yorum yok.";
       return;
     }
@@ -427,19 +464,19 @@ async function loadMyHistory(){
       list.appendChild(item);
     });
 
-  }catch(e){
+  } catch (e) {
     console.error(e);
     list.innerHTML = "Geçmiş alınamadı.";
   }
 }
 
-function escapeHtml(str){
+function escapeHtml(str) {
   return String(str)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 /* ================= LOGOUT ================= */

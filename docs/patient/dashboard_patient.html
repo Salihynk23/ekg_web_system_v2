@@ -72,7 +72,10 @@
         <div class="chart-slider-wrap">
           <div class="chart-slider-head">
             <span>Geçmiş veriler arasında gezin</span>
-            <span id="ekgRangeInfo">Son pencere</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('ekg')">Canlıya Dön</button>
+              <span id="ekgRangeInfo">Son pencere</span>
+            </div>
           </div>
           <input id="ekgRange" class="chart-range" type="range" min="0" max="0" value="0">
         </div>
@@ -99,7 +102,10 @@
         <div class="chart-slider-wrap">
           <div class="chart-slider-head">
             <span>Geçmiş veriler arasında gezin</span>
-            <span id="hrRangeInfo">Son pencere</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('hr')">Canlıya Dön</button>
+              <span id="hrRangeInfo">Son pencere</span>
+            </div>
           </div>
           <input id="hrRange" class="chart-range" type="range" min="0" max="0" value="0">
         </div>
@@ -126,7 +132,10 @@
         <div class="chart-slider-wrap">
           <div class="chart-slider-head">
             <span>Geçmiş veriler arasında gezin</span>
-            <span id="tempRangeInfo">Son pencere</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('temp')">Canlıya Dön</button>
+              <span id="tempRangeInfo">Son pencere</span>
+            </div>
           </div>
           <input id="tempRange" class="chart-range" type="range" min="0" max="0" value="0">
         </div>
