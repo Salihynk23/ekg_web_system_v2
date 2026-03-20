@@ -64,6 +64,18 @@ function formatSecondLabel(dtStr) {
   });
 }
 
+function makeEmptyTimeline(seconds = TOTAL_SECONDS) {
+  const now = Date.now();
+  const arr = [];
+  for (let i = seconds - 1; i >= 0; i--) {
+    arr.push({
+      time: new Date(now - i * 1000).toISOString(),
+      value: null
+    });
+  }
+  return arr;
+}
+
 /* ================= USER / ROLE ================= */
 async function loadMeAndCheckRole() {
   try {
@@ -124,7 +136,7 @@ window.showSection = function (id) {
   if (id === "doctor") loadDoctorComment();
 };
 
-/* ================= CHART CORE ================= */
+/* ================= CHART ================= */
 function stopLive() {
   if (timer) {
     clearInterval(timer);
@@ -158,25 +170,27 @@ function buildChart(canvasId, label, color, chartKey) {
   activeChartKey = chartKey;
 
   const axis = getAxisLimits(chartKey);
+  const state = chartState[chartKey];
 
   return new Chart(ctx, {
     type: "line",
     data: {
-      labels: [],
+      labels: state.visibleSlice.map(p => formatSecondLabel(p.time)),
       datasets: [{
         label,
-        data: [],
+        data: state.visibleSlice.map(p => p.value),
         borderColor: color,
         backgroundColor: color,
         borderWidth: 4,
         tension: chartKey === "ekg" ? 0.15 : 0.28,
-        pointRadius: 3,
-        pointHoverRadius: 6,
+        pointRadius: state.visibleSlice.map(p => (p.value == null ? 0 : 3)),
+        pointHoverRadius: state.visibleSlice.map(p => (p.value == null ? 0 : 6)),
         pointHitRadius: 10,
         pointBackgroundColor: "#ffffff",
         pointBorderColor: color,
         pointBorderWidth: 2,
-        fill: false
+        fill: false,
+        spanGaps: false
       }]
     },
     options: {
@@ -212,8 +226,9 @@ function buildChart(canvasId, label, color, chartKey) {
               return current ? formatDT(current.time) : "";
             },
             label(context) {
-              const value = context.parsed.y;
-              return `${label}: ${Number(value).toFixed(2)}`;
+              const current = chartState[activeChartKey]?.visibleSlice?.[context.dataIndex];
+              if (!current || current.value == null) return "Veri yok";
+              return `${label}: ${Number(context.parsed.y).toFixed(2)}`;
             }
           }
         }
@@ -274,17 +289,39 @@ function bindRangeInputs() {
   });
 }
 
+function ensureInitialTimeline(chartKey) {
+  const state = chartState[chartKey];
+  if (!state) return;
+  if (state.points.length === 0) {
+    state.points = makeEmptyTimeline(state.windowSize);
+  }
+}
+
 function pushHistoryPoint(chartKey, value, timeStr = new Date().toISOString()) {
   const state = chartState[chartKey];
   if (!state) return;
 
-  state.points.push({
-    time: timeStr,
-    value: Number(value)
-  });
+  ensureInitialTimeline(chartKey);
 
-  if (state.points.length > 600) {
-    state.points.shift();
+  const hasOnlyNulls = state.points.every(p => p.value == null);
+
+  if (hasOnlyNulls) {
+    const idx = state.points.findIndex(p => p.value == null);
+    if (idx !== -1) {
+      state.points[idx] = {
+        time: timeStr,
+        value: Number(value)
+      };
+    }
+  } else {
+    state.points.push({
+      time: timeStr,
+      value: Number(value)
+    });
+
+    if (state.points.length > 600) {
+      state.points.shift();
+    }
   }
 
   updateSlider(chartKey);
@@ -326,6 +363,8 @@ function renderWindow(chartKey, startIndex = 0) {
   const state = chartState[chartKey];
   if (!state) return;
 
+  ensureInitialTimeline(chartKey);
+
   const endIndex = Math.min(startIndex + state.windowSize, state.points.length);
   const slice = state.points.slice(startIndex, endIndex);
 
@@ -334,16 +373,19 @@ function renderWindow(chartKey, startIndex = 0) {
   if (chart && activeChartKey === chartKey) {
     chart.data.labels = slice.map(p => formatSecondLabel(p.time));
     chart.data.datasets[0].data = slice.map(p => p.value);
+    chart.data.datasets[0].pointRadius = slice.map(p => (p.value == null ? 0 : 3));
+    chart.data.datasets[0].pointHoverRadius = slice.map(p => (p.value == null ? 0 : 6));
     chart.update("none");
   }
 
   const info = document.getElementById(state.infoId);
   if (info) {
-    const total = state.points.length;
-    if (!total) {
-      info.textContent = "0-0 / 0";
+    const filledCount = state.points.filter(p => p.value != null).length;
+    if (!filledCount) {
+      info.textContent = `0-0 / 0`;
     } else {
-      info.textContent = `${startIndex + 1}-${endIndex} / ${total}`;
+      const shownFilled = slice.filter(p => p.value != null).length;
+      info.textContent = `${shownFilled} nokta / ${filledCount}`;
     }
   }
 }
@@ -354,6 +396,9 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
     hr: "#22c55e",
     temp: "#f59e0b"
   };
+
+  ensureInitialTimeline(chartKey);
+  renderWindow(chartKey, 0);
 
   chart = buildChart(canvasId, label, colorMap[chartKey], chartKey);
   if (!chart) return;
@@ -385,6 +430,9 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
 }
 
 async function startLiveECG() {
+  ensureInitialTimeline("ekg");
+  renderWindow("ekg", 0);
+
   chart = buildChart("ekgChart", "EKG", "#38bdf8", "ekg");
   if (!chart) return;
 
