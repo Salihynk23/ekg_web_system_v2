@@ -135,12 +135,27 @@ function stopLive() {
   activeChartKey = null;
 }
 
+function getAxisLimits(chartKey) {
+  if (chartKey === "temp") {
+    return { min: 35.8, max: 38.0 };
+  }
+  if (chartKey === "hr") {
+    return { min: 50, max: 110 };
+  }
+  if (chartKey === "ekg") {
+    return { min: 0.8, max: 2.1 };
+  }
+  return {};
+}
+
 function buildChart(canvasId, label, color, chartKey) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return null;
 
   const ctx = canvas.getContext("2d");
   activeChartKey = chartKey;
+
+  const axis = getAxisLimits(chartKey);
 
   return new Chart(ctx, {
     type: "line",
@@ -151,10 +166,10 @@ function buildChart(canvasId, label, color, chartKey) {
         data: [],
         borderColor: color,
         backgroundColor: color,
-        borderWidth: 3,
+        borderWidth: 4,
         tension: 0.28,
-        pointRadius: 3,
-        pointHoverRadius: 6,
+        pointRadius: 4,
+        pointHoverRadius: 7,
         pointHitRadius: 12,
         pointBackgroundColor: "#ffffff",
         pointBorderColor: color,
@@ -175,7 +190,8 @@ function buildChart(canvasId, label, color, chartKey) {
           labels: {
             color: "#e7eaf3",
             font: {
-              weight: "700"
+              weight: "700",
+              size: 15
             }
           }
         },
@@ -206,7 +222,10 @@ function buildChart(canvasId, label, color, chartKey) {
             color: "#aab1c7",
             maxRotation: 0,
             autoSkip: true,
-            maxTicksLimit: 8
+            maxTicksLimit: 8,
+            font: {
+              size: 13
+            }
           },
           grid: {
             color: "rgba(255,255,255,.06)"
@@ -216,16 +235,20 @@ function buildChart(canvasId, label, color, chartKey) {
           }
         },
         y: {
+          min: axis.min,
+          max: axis.max,
           ticks: {
-            color: "#aab1c7"
+            color: "#aab1c7",
+            font: {
+              size: 13
+            }
           },
           grid: {
             color: "rgba(255,255,255,.06)"
           },
           border: {
             color: "rgba(255,255,255,.10)"
-          },
-          grace: "10%"
+          }
         }
       }
     }
@@ -248,9 +271,39 @@ function bindRangeInputs() {
   });
 }
 
+function seedInitialWindow(chartKey) {
+  const state = chartState[chartKey];
+  if (!state || state.points.length) return;
+
+  const now = Date.now();
+  let baseValue = 0;
+
+  if (chartKey === "temp") baseValue = 36.8;
+  if (chartKey === "hr") baseValue = 78;
+  if (chartKey === "ekg") baseValue = 1.1;
+
+  for (let i = state.windowSize; i > 0; i--) {
+    state.points.push({
+      time: new Date(now - i * 1000).toISOString(),
+      value: baseValue
+    });
+  }
+}
+
 function pushHistoryPoint(chartKey, value, timeStr = new Date().toISOString()) {
   const state = chartState[chartKey];
   if (!state) return;
+
+  if (
+    state.points.length &&
+    state.points.every(p =>
+      (chartKey === "temp" && p.value === 36.8) ||
+      (chartKey === "hr" && p.value === 78) ||
+      (chartKey === "ekg" && p.value === 1.1)
+    )
+  ) {
+    state.points = [];
+  }
 
   state.points.push({
     time: timeStr,
@@ -326,10 +379,11 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
     temp: "#f59e0b"
   };
 
+  seedInitialWindow(chartKey);
   chart = buildChart(canvasId, label, colorMap[chartKey], chartKey);
   if (!chart) return;
 
-  renderWindow(chartKey, 0);
+  renderWindow(chartKey, Math.max(0, chartState[chartKey].points.length - chartState[chartKey].windowSize));
 
   timer = setInterval(async () => {
     try {
@@ -353,10 +407,11 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
 }
 
 async function startLiveECG() {
+  seedInitialWindow("ekg");
   chart = buildChart("ekgChart", "EKG", "#38bdf8", "ekg");
   if (!chart) return;
 
-  renderWindow("ekg", 0);
+  renderWindow("ekg", Math.max(0, chartState.ekg.points.length - chartState.ekg.windowSize));
 
   timer = setInterval(async () => {
     try {

@@ -322,46 +322,20 @@ select.select {
 
 .chart-wrap{
   width: 100%;
-  min-height: 420px;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025));
+  min-height: 500px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
   border: 1px solid rgba(255,255,255,.12);
-  border-radius: 20px;
-  padding: 18px 18px 14px 18px;
+  border-radius: 24px;
+  padding: 18px 20px 16px 20px;
   margin-top: 14px;
   box-shadow: 0 10px 30px rgba(0,0,0,.18);
 }
 
-.chart-toolbar{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:14px;
-  flex-wrap:wrap;
-  margin-bottom:14px;
-}
-
-.chart-meta{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-}
-
-.meta-pill{
-  padding:8px 12px;
-  border-radius:999px;
-  border:1px solid var(--border);
-  background: rgba(255,255,255,.06);
-  color: var(--muted);
-  font-size:13px;
-  font-weight:700;
-}
-
 .chart-slider-wrap{
-  margin-top:14px;
+  margin-top: 18px;
   display:flex;
   flex-direction:column;
-  gap:8px;
+  gap:10px;
 }
 
 .chart-slider-head{
@@ -376,7 +350,7 @@ select.select {
 .chart-range{
   width:100%;
   appearance:none;
-  height:8px;
+  height:10px;
   border-radius:999px;
   background: rgba(255,255,255,.12);
   outline:none;
@@ -384,8 +358,8 @@ select.select {
 
 .chart-range::-webkit-slider-thumb{
   appearance:none;
-  width:18px;
-  height:18px;
+  width:20px;
+  height:20px;
   border-radius:50%;
   background: var(--btn);
   border:2px solid #fff;
@@ -394,8 +368,8 @@ select.select {
 }
 
 .chart-range::-moz-range-thumb{
-  width:18px;
-  height:18px;
+  width:20px;
+  height:20px;
   border:none;
   border-radius:50%;
   background: var(--btn);
@@ -405,7 +379,7 @@ select.select {
 .chart-canvas-wrap{
   position:relative;
   width:100%;
-  height:300px;
+  height:360px;
 }
 
 .chart-canvas-wrap canvas{
@@ -415,11 +389,11 @@ select.select {
 
 @media (max-width: 700px){
   .chart-wrap{
-    min-height: 380px;
+    min-height: 430px;
     padding: 14px;
   }
 
   .chart-canvas-wrap{
-    height: 250px;
+    height: 280px;
   }
 }
