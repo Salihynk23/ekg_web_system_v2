@@ -297,23 +297,26 @@ function ensureInitialTimeline(chartKey) {
   }
 }
 
+function firstNullIndex(points) {
+  return points.findIndex(p => p.value == null);
+}
+
 function pushHistoryPoint(chartKey, value, timeStr = new Date().toISOString()) {
   const state = chartState[chartKey];
   if (!state) return;
 
   ensureInitialTimeline(chartKey);
 
-  const hasOnlyNulls = state.points.every(p => p.value == null);
+  const emptyIndex = firstNullIndex(state.points);
 
-  if (hasOnlyNulls) {
-    const idx = state.points.findIndex(p => p.value == null);
-    if (idx !== -1) {
-      state.points[idx] = {
-        time: timeStr,
-        value: Number(value)
-      };
-    }
+  if (emptyIndex !== -1) {
+    // Henüz 60 saniyelik pencere dolmadıysa soldan doldur
+    state.points[emptyIndex] = {
+      time: timeStr,
+      value: Number(value)
+    };
   } else {
+    // Pencere dolduktan sonra kayarak devam et
     state.points.push({
       time: timeStr,
       value: Number(value)
@@ -327,7 +330,12 @@ function pushHistoryPoint(chartKey, value, timeStr = new Date().toISOString()) {
   updateSlider(chartKey);
 
   if (state.autoFollow) {
-    moveToLatestWindow(chartKey);
+    // Eğer hâlâ boş yer varsa solda kalsın
+    if (firstNullIndex(state.points) !== -1) {
+      renderWindow(chartKey, 0);
+    } else {
+      moveToLatestWindow(chartKey);
+    }
   } else {
     const slider = document.getElementById(state.sliderId);
     const currentStart = Number(slider?.value || 0);
@@ -382,10 +390,9 @@ function renderWindow(chartKey, startIndex = 0) {
   if (info) {
     const filledCount = state.points.filter(p => p.value != null).length;
     if (!filledCount) {
-      info.textContent = `0-0 / 0`;
+      info.textContent = `0 nokta / 0`;
     } else {
-      const shownFilled = slice.filter(p => p.value != null).length;
-      info.textContent = `${shownFilled} nokta / ${filledCount}`;
+      info.textContent = `${filledCount} nokta / ${filledCount}`;
     }
   }
 }
