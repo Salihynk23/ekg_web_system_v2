@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-import random, math
+import random
+import math
 
 import models, schemas
 from database import SessionLocal
@@ -18,8 +19,11 @@ def get_db():
         db.close()
 
 
-# basit ekg örneği
+# ======================
+# SAHTE EKG ÜRETİCİ
+# ======================
 _ecg_phase = 0.0
+
 def ecg_sample():
     global _ecg_phase
     _ecg_phase += 0.18
@@ -29,6 +33,23 @@ def ecg_sample():
     return 1.0 + base + spike + noise
 
 
+# ======================
+# ORTAK DAYS DOĞRULAMA
+# ======================
+def validate_days(days: int | None):
+    if days is None:
+        return None
+    if days not in [1, 7, 30]:
+        raise HTTPException(
+            status_code=400,
+            detail="days sadece 1, 7 veya 30 olabilir"
+        )
+    return datetime.utcnow() - timedelta(days=days)
+
+
+# ======================
+# HASTA / KULLANICI İÇİN SAHTE VERİ ÜRET
+# ======================
 @router.post("/fake")
 def generate_fake(
     seconds: int = 1,
@@ -46,12 +67,14 @@ def generate_fake(
             value=float(hr),
             created_at=datetime.utcnow()
         ))
+
         db.add(models.Measurement(
             user_id=user.id,
             kind="temperature",
             value=float(temp),
             created_at=datetime.utcnow()
         ))
+
         db.add(models.Measurement(
             user_id=user.id,
             kind="ecg",
@@ -63,6 +86,9 @@ def generate_fake(
     return {"ok": True, "seconds": seconds}
 
 
+# ======================
+# KULLANICININ EN SON ÖLÇÜMÜ
+# ======================
 @router.get("/latest", response_model=schemas.LatestOut)
 def latest(
     db: Session = Depends(get_db),
@@ -94,6 +120,9 @@ def latest(
     }
 
 
+# ======================
+# DOKTORUN SEÇTİĞİ HASTANIN EN SON ÖLÇÜMÜ
+# ======================
 @router.get("/patient/{patient_id}/latest", response_model=schemas.LatestOut)
 def latest_for_patient(
     patient_id: int,
@@ -121,7 +150,10 @@ def latest_for_patient(
     ecg = last("ecg")
 
     if t is None or hr is None or ecg is None:
-        raise HTTPException(status_code=404, detail="Seçilen hasta için ölçüm bulunamadı")
+        raise HTTPException(
+            status_code=404,
+            detail="Seçilen hasta için ölçüm bulunamadı"
+        )
 
     return {
         "temperature": float(t),
@@ -130,34 +162,35 @@ def latest_for_patient(
     }
 
 
-@router.get("/patient/{patient_id}/{kind}", response_model=list[schemas.MeasurementOut])
-def doctor_patient_series(
-    patient_id: int,
+# ======================
+# KULLANICININ KENDİ SERİSİ
+# ÖRNEK:
+# /measurements/ecg?limit=500&days=1
+# /measurements/heart_rate?limit=500&days=7
+# ======================
+@router.get("/{kind}", response_model=list[schemas.MeasurementOut])
+def series(
     kind: str,
-    limit: int = Query(120, ge=1, le=1000),
-    days: int | None = Query(None, ge=1, le=365),
+    limit: int = Query(120, ge=1, le=5000),
+    days: int | None = Query(None),
     db: Session = Depends(get_db),
-    doctor: models.User = Depends(require_role("doctor"))
+    user: models.User = Depends(get_current_user)
 ):
     if kind not in ["ecg", "temperature", "heart-rate", "heart_rate"]:
         raise HTTPException(status_code=400, detail="kind geçersiz")
 
-    patient = db.query(models.User).filter(models.User.id == patient_id).first()
-    if not patient or patient.role != "patient":
-        raise HTTPException(status_code=404, detail="Hasta bulunamadı")
-
     kind_db = "heart_rate" if kind in ["heart-rate", "heart_rate"] else kind
+    since = validate_days(days)
 
     q = (
         db.query(models.Measurement)
         .filter(
-            models.Measurement.user_id == patient_id,
+            models.Measurement.user_id == user.id,
             models.Measurement.kind == kind_db
         )
     )
 
-    if days is not None:
-        since = datetime.utcnow() - timedelta(days=days)
+    if since is not None:
         q = q.filter(models.Measurement.created_at >= since)
 
     rows = (
@@ -169,29 +202,40 @@ def doctor_patient_series(
     return list(reversed(rows))
 
 
-@router.get("/{kind}", response_model=list[schemas.MeasurementOut])
-def series(
+# ======================
+# DOKTORUN HASTA SERİSİ
+# ÖRNEK:
+# /measurements/patient/1/ecg?limit=500&days=1
+# /measurements/patient/1/heart_rate?limit=500&days=7
+# ======================
+@router.get("/patient/{patient_id}/{kind}", response_model=list[schemas.MeasurementOut])
+def doctor_patient_series(
+    patient_id: int,
     kind: str,
-    limit: int = Query(120, ge=1, le=1000),
-    days: int | None = Query(None, ge=1, le=365),
+    limit: int = Query(120, ge=1, le=5000),
+    days: int | None = Query(None),
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user)
+    doctor: models.User = Depends(require_role("doctor"))
 ):
     if kind not in ["ecg", "temperature", "heart-rate", "heart_rate"]:
         raise HTTPException(status_code=400, detail="kind geçersiz")
 
+    patient = db.query(models.User).filter(models.User.id == patient_id).first()
+    if not patient or patient.role != "patient":
+        raise HTTPException(status_code=404, detail="Hasta bulunamadı")
+
     kind_db = "heart_rate" if kind in ["heart-rate", "heart_rate"] else kind
+    since = validate_days(days)
 
     q = (
         db.query(models.Measurement)
         .filter(
-            models.Measurement.user_id == user.id,
+            models.Measurement.user_id == patient_id,
             models.Measurement.kind == kind_db
         )
     )
 
-    if days is not None:
-        since = datetime.utcnow() - timedelta(days=days)
+    if since is not None:
         q = q.filter(models.Measurement.created_at >= since)
 
     rows = (

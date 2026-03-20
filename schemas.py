@@ -2,7 +2,10 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-# ---------- USERS ----------
+
+# ======================
+# USERS
+# ======================
 class UserCreate(BaseModel):
     username: str
     password: str
@@ -32,7 +35,9 @@ class UserMe(UserOut):
     pass
 
 
-# ---------- MEASUREMENTS ----------
+# ======================
+# MEASUREMENTS
+# ======================
 class MeasurementOut(BaseModel):
     id: int
     user_id: int
@@ -50,13 +55,16 @@ class LatestOut(BaseModel):
     ecg_value: float
 
 
-# ---------- ECG ----------
+# ======================
+# ECG
+# ======================
 class ECGCreate(BaseModel):
     ecg_values: list[float]
 
 
 class ECGOut(BaseModel):
     id: int
+    user_id: int
     timestamp: datetime
     ecg_values: list[float]
 
@@ -64,37 +72,24 @@ class ECGOut(BaseModel):
         from_attributes = True
 
 
-# ---------- COMMENTS ----------
+# ======================
+# COMMENTS
+# ======================
 class CommentCreate(BaseModel):
-    comment_text: str
+    comment: str
 
 
 class CommentOut(BaseModel):
     id: int
     patient_id: int
     doctor_id: int
-    comment_text: str
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# ---------- DOCTOR COMMENTS ----------
-class DoctorCommentCreate(BaseModel):
-    comment_text: str
-
-
-class DoctorCommentOut(BaseModel):
-    id: int
-    patient_id: int
-    doctor_id: int
-    comment_text: str
+    comment: str
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
-class DoctorCommentLatestOut(BaseModel):
-    comment: Optional[DoctorCommentOut]
+class LatestCommentOut(BaseModel):
+    comment: Optional[CommentOut] = None
