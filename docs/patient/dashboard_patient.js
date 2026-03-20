@@ -7,35 +7,32 @@ if (!TOKEN) {
 }
 
 let me = null;
-let timer = null;
 let chart = null;
 let activeChartKey = null;
 
-const TOTAL_SECONDS = 60;
-
-const chartState = {
+const patientChartState = {
   ekg: {
     points: [],
-    windowSize: TOTAL_SECONDS,
+    windowSize: 60,
     sliderId: "ekgRange",
     infoId: "ekgRangeInfo",
-    autoFollow: true,
+    filterDays: 1,
     visibleSlice: []
   },
   hr: {
     points: [],
-    windowSize: TOTAL_SECONDS,
+    windowSize: 60,
     sliderId: "hrRange",
     infoId: "hrRangeInfo",
-    autoFollow: true,
+    filterDays: 1,
     visibleSlice: []
   },
   temp: {
     points: [],
-    windowSize: TOTAL_SECONDS,
+    windowSize: 60,
     sliderId: "tempRange",
     infoId: "tempRangeInfo",
-    autoFollow: true,
+    filterDays: 1,
     visibleSlice: []
   }
 };
@@ -53,7 +50,7 @@ function formatDT(dtStr) {
   return d.toLocaleString("tr-TR");
 }
 
-function formatSecondLabel(dtStr) {
+function formatShortDT(dtStr) {
   if (!dtStr) return "";
   const d = new Date(dtStr);
   if (isNaN(d.getTime())) return dtStr;
@@ -62,18 +59,6 @@ function formatSecondLabel(dtStr) {
     minute: "2-digit",
     second: "2-digit"
   });
-}
-
-function makeEmptyTimeline(seconds = TOTAL_SECONDS) {
-  const now = Date.now();
-  const arr = [];
-  for (let i = seconds - 1; i >= 0; i--) {
-    arr.push({
-      time: new Date(now - i * 1000).toISOString(),
-      value: null
-    });
-  }
-  return arr;
 }
 
 /* ================= USER / ROLE ================= */
@@ -114,15 +99,19 @@ function hideAllPages() {
 }
 
 window.goHome = function () {
-  stopLive();
   hideAllPages();
   const home = document.getElementById("home");
   if (home) home.classList.add("active");
   document.getElementById("backBtn").classList.add("hidden");
+
+  if (chart) {
+    chart.destroy();
+    chart = null;
+  }
+  activeChartKey = null;
 };
 
-window.showSection = function (id) {
-  stopLive();
+window.showSection = async function (id) {
   hideAllPages();
 
   const el = document.getElementById(id);
@@ -130,74 +119,109 @@ window.showSection = function (id) {
 
   document.getElementById("backBtn").classList.toggle("hidden", id === "home");
 
-  if (id === "ekg") startLiveECG();
-  if (id === "hr") startLiveLatest("heart_rate", "BPM", "hrChart", 1000, "hr");
-  if (id === "temp") startLiveLatest("temperature", "°C", "tempChart", 1000, "temp");
-  if (id === "doctor") loadDoctorComment();
+  if (id === "overview") {
+    await loadPatientOverview();
+  }
+  if (id === "ekg") {
+    await loadPatientChart("ekg");
+  }
+  if (id === "hr") {
+    await loadPatientChart("hr");
+  }
+  if (id === "temp") {
+    await loadPatientChart("temp");
+  }
+  if (id === "doctor") {
+    await loadDoctorComment();
+  }
 };
 
-/* ================= CHART ================= */
-function stopLive() {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
+/* ================= OVERVIEW ================= */
+async function loadPatientOverview() {
+  try {
+    const res = await fetch(`${API_URL}/measurements/latest`, {
+      headers: { Authorization: `Bearer ${TOKEN}` }
+    });
+
+    const ekgEl = document.getElementById("patientLastEcg");
+    const tempEl = document.getElementById("patientLastTemp");
+    const hrEl = document.getElementById("patientLastHr");
+
+    if (!res.ok) {
+      if (ekgEl) ekgEl.textContent = "-";
+      if (tempEl) tempEl.textContent = "-";
+      if (hrEl) hrEl.textContent = "-";
+      return;
+    }
+
+    const data = await res.json();
+
+    if (ekgEl) ekgEl.textContent = Number(data.ecg_value).toFixed(3);
+    if (tempEl) tempEl.textContent = `${Number(data.temperature).toFixed(2)} °C`;
+    if (hrEl) hrEl.textContent = `${data.heart_rate} BPM`;
+
+  } catch (e) {
+    console.error("loadPatientOverview err:", e);
   }
-  if (chart) {
-    chart.destroy();
-    chart = null;
-  }
-  activeChartKey = null;
 }
 
+/* ================= CHART ================= */
 function getAxisLimits(chartKey) {
-  if (chartKey === "temp") {
-    return { min: 35.5, max: 38.5, stepSize: 0.5 };
-  }
-  if (chartKey === "hr") {
-    return { min: 40, max: 140, stepSize: 10 };
-  }
-  if (chartKey === "ekg") {
-    return { min: 0.0, max: 2.2, stepSize: 0.2 };
-  }
+  if (chartKey === "temp") return { min: 35.5, max: 38.5, step: 0.5 };
+  if (chartKey === "hr") return { min: 40, max: 140, step: 10 };
+  if (chartKey === "ekg") return { min: 0.0, max: 2.2, step: 0.2 };
   return {};
 }
 
-function buildChart(canvasId, label, color, chartKey) {
-  const canvas = document.getElementById(canvasId);
+function chartColor(chartKey) {
+  if (chartKey === "ekg") return "#38bdf8";
+  if (chartKey === "hr") return "#22c55e";
+  return "#f59e0b";
+}
+
+function chartLabel(chartKey) {
+  if (chartKey === "ekg") return "EKG";
+  if (chartKey === "hr") return "BPM";
+  return "°C";
+}
+
+function canvasId(chartKey) {
+  if (chartKey === "ekg") return "ekgChart";
+  if (chartKey === "hr") return "hrChart";
+  return "tempChart";
+}
+
+function buildChart(chartKey) {
+  const canvas = document.getElementById(canvasId(chartKey));
   if (!canvas) return null;
 
   const ctx = canvas.getContext("2d");
-  activeChartKey = chartKey;
-
   const axis = getAxisLimits(chartKey);
-  const state = chartState[chartKey];
+  activeChartKey = chartKey;
 
   return new Chart(ctx, {
     type: "line",
     data: {
-      labels: state.visibleSlice.map(p => formatSecondLabel(p.time)),
+      labels: [],
       datasets: [{
-        label,
-        data: state.visibleSlice.map(p => p.value),
-        borderColor: color,
-        backgroundColor: color,
+        label: chartLabel(chartKey),
+        data: [],
+        borderColor: chartColor(chartKey),
+        backgroundColor: chartColor(chartKey),
         borderWidth: 4,
         tension: chartKey === "ekg" ? 0.15 : 0.28,
-        pointRadius: state.visibleSlice.map(p => (p.value == null ? 0 : 3)),
-        pointHoverRadius: state.visibleSlice.map(p => (p.value == null ? 0 : 6)),
-        pointHitRadius: 10,
+        pointRadius: 3,
+        pointHoverRadius: 6,
         pointBackgroundColor: "#ffffff",
-        pointBorderColor: color,
+        pointBorderColor: chartColor(chartKey),
         pointBorderWidth: 2,
-        fill: false,
-        spanGaps: false
+        fill: false
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
-      normalized: true,
       interaction: {
         mode: "index",
         intersect: false
@@ -206,67 +230,42 @@ function buildChart(canvasId, label, color, chartKey) {
         legend: {
           labels: {
             color: "#e7eaf3",
-            font: {
-              weight: "700",
-              size: 15
-            }
+            font: { weight: "700" }
           }
         },
         tooltip: {
           backgroundColor: "rgba(11,16,32,.96)",
           titleColor: "#ffffff",
           bodyColor: "#e7eaf3",
-          borderColor: "rgba(255,255,255,.15)",
-          borderWidth: 1,
-          padding: 12,
           callbacks: {
             title(items) {
               const i = items[0]?.dataIndex ?? 0;
-              const current = chartState[activeChartKey]?.visibleSlice?.[i];
-              return current ? formatDT(current.time) : "";
-            },
-            label(context) {
-              const current = chartState[activeChartKey]?.visibleSlice?.[context.dataIndex];
-              if (!current || current.value == null) return "Veri yok";
-              return `${label}: ${Number(context.parsed.y).toFixed(2)}`;
+              const current = patientChartState[activeChartKey]?.visibleSlice?.[i];
+              return current ? formatDT(current.created_at) : "";
             }
           }
         }
       },
       scales: {
         x: {
-          offset: false,
           ticks: {
             color: "#aab1c7",
-            maxRotation: 0,
             autoSkip: true,
-            maxTicksLimit: 10,
-            font: {
-              size: 12
-            }
+            maxTicksLimit: 8
           },
           grid: {
             color: "rgba(255,255,255,.06)"
-          },
-          border: {
-            color: "rgba(255,255,255,.10)"
           }
         },
         y: {
           min: axis.min,
           max: axis.max,
           ticks: {
-            stepSize: axis.stepSize,
-            color: "#aab1c7",
-            font: {
-              size: 12
-            }
+            stepSize: axis.step,
+            color: "#aab1c7"
           },
           grid: {
             color: "rgba(255,255,255,.06)"
-          },
-          border: {
-            color: "rgba(255,255,255,.10)"
           }
         }
       }
@@ -276,203 +275,101 @@ function buildChart(canvasId, label, color, chartKey) {
 
 function bindRangeInputs() {
   ["ekg", "hr", "temp"].forEach(key => {
-    const state = chartState[key];
-    const slider = document.getElementById(state.sliderId);
+    const slider = document.getElementById(patientChartState[key].sliderId);
     if (!slider) return;
 
     slider.addEventListener("input", () => {
-      const sliderValue = Number(slider.value);
-      const maxStart = Math.max(0, state.points.length - state.windowSize);
-      state.autoFollow = sliderValue >= maxStart;
-      renderWindow(key, sliderValue);
+      renderWindow(key, Number(slider.value));
     });
   });
 }
 
-function ensureInitialTimeline(chartKey) {
-  const state = chartState[chartKey];
-  if (!state) return;
-  if (state.points.length === 0) {
-    state.points = makeEmptyTimeline(state.windowSize);
-  }
-}
-
-function firstNullIndex(points) {
-  return points.findIndex(p => p.value == null);
-}
-
-function pushHistoryPoint(chartKey, value, timeStr = new Date().toISOString()) {
-  const state = chartState[chartKey];
-  if (!state) return;
-
-  ensureInitialTimeline(chartKey);
-
-  const emptyIndex = firstNullIndex(state.points);
-
-  if (emptyIndex !== -1) {
-    // Henüz 60 saniyelik pencere dolmadıysa soldan doldur
-    state.points[emptyIndex] = {
-      time: timeStr,
-      value: Number(value)
-    };
-  } else {
-    // Pencere dolduktan sonra kayarak devam et
-    state.points.push({
-      time: timeStr,
-      value: Number(value)
-    });
-
-    if (state.points.length > 600) {
-      state.points.shift();
-    }
-  }
-
-  updateSlider(chartKey);
-
-  if (state.autoFollow) {
-    // Eğer hâlâ boş yer varsa solda kalsın
-    if (firstNullIndex(state.points) !== -1) {
-      renderWindow(chartKey, 0);
-    } else {
-      moveToLatestWindow(chartKey);
-    }
-  } else {
-    const slider = document.getElementById(state.sliderId);
-    const currentStart = Number(slider?.value || 0);
-    renderWindow(chartKey, currentStart);
-  }
-}
-
-function updateSlider(chartKey) {
-  const state = chartState[chartKey];
-  const slider = document.getElementById(state.sliderId);
-  if (!slider) return;
-
-  const maxStart = Math.max(0, state.points.length - state.windowSize);
-  slider.max = maxStart;
-
-  if (Number(slider.value) > maxStart) {
-    slider.value = maxStart;
-  }
-}
-
-function moveToLatestWindow(chartKey) {
-  const state = chartState[chartKey];
-  const slider = document.getElementById(state.sliderId);
-  if (!slider) return;
-
-  const maxStart = Math.max(0, state.points.length - state.windowSize);
-  slider.value = maxStart;
-  state.autoFollow = true;
-  renderWindow(chartKey, maxStart);
-}
-
 function renderWindow(chartKey, startIndex = 0) {
-  const state = chartState[chartKey];
+  const state = patientChartState[chartKey];
   if (!state) return;
-
-  ensureInitialTimeline(chartKey);
 
   const endIndex = Math.min(startIndex + state.windowSize, state.points.length);
   const slice = state.points.slice(startIndex, endIndex);
-
   state.visibleSlice = slice;
 
   if (chart && activeChartKey === chartKey) {
-    chart.data.labels = slice.map(p => formatSecondLabel(p.time));
+    chart.data.labels = slice.map(p => formatShortDT(p.created_at));
     chart.data.datasets[0].data = slice.map(p => p.value);
-    chart.data.datasets[0].pointRadius = slice.map(p => (p.value == null ? 0 : 3));
-    chart.data.datasets[0].pointHoverRadius = slice.map(p => (p.value == null ? 0 : 6));
     chart.update("none");
   }
 
   const info = document.getElementById(state.infoId);
   if (info) {
-    const filledCount = state.points.filter(p => p.value != null).length;
-    if (!filledCount) {
-      info.textContent = `0 nokta / 0`;
-    } else {
-      info.textContent = `${filledCount} nokta / ${filledCount}`;
-    }
+    if (!slice.length) info.textContent = "Veri yok";
+    else info.textContent = `${startIndex + 1}-${endIndex} / ${state.points.length}`;
   }
 }
 
-/* ================= LIVE DATA ================= */
-async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
-  const colorMap = {
-    hr: "#22c55e",
-    temp: "#f59e0b"
-  };
+function updateSlider(chartKey) {
+  const state = patientChartState[chartKey];
+  const slider = document.getElementById(state.sliderId);
+  if (!slider) return;
 
-  ensureInitialTimeline(chartKey);
-  renderWindow(chartKey, 0);
-
-  chart = buildChart(canvasId, label, colorMap[chartKey], chartKey);
-  if (!chart) return;
-
-  renderWindow(chartKey, 0);
-
-  timer = setInterval(async () => {
-    try {
-      await fetch(`${API_URL}/measurements/fake?seconds=1`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${TOKEN}` }
-      });
-
-      const latestRes = await fetch(`${API_URL}/measurements/latest`, {
-        headers: { Authorization: `Bearer ${TOKEN}` }
-      });
-      if (!latestRes.ok) return;
-
-      const latest = await latestRes.json();
-      pushHistoryPoint(
-        chartKey,
-        latest[field],
-        latest.created_at || new Date().toISOString()
-      );
-    } catch (e) {
-      console.log("live latest err", e);
-    }
-  }, intervalMs);
-}
-
-async function startLiveECG() {
-  ensureInitialTimeline("ekg");
-  renderWindow("ekg", 0);
-
-  chart = buildChart("ekgChart", "EKG", "#38bdf8", "ekg");
-  if (!chart) return;
-
-  renderWindow("ekg", 0);
-
-  timer = setInterval(async () => {
-    try {
-      await fetch(`${API_URL}/measurements/fake?seconds=1`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${TOKEN}` }
-      });
-
-      const ecgRes = await fetch(`${API_URL}/measurements/ecg?limit=1`, {
-        headers: { Authorization: `Bearer ${TOKEN}` }
-      });
-      if (!ecgRes.ok) return;
-
-      const series = await ecgRes.json();
-      if (Array.isArray(series) && series.length) {
-        const row = series[0];
-        const v = row.value ?? row.ecg ?? null;
-        const t = row.created_at || row.time || new Date().toISOString();
-        if (v !== null) pushHistoryPoint("ekg", v, t);
-      }
-    } catch (e) {
-      console.log("live ecg err", e);
-    }
-  }, 1000);
+  const maxStart = Math.max(0, state.points.length - state.windowSize);
+  slider.max = maxStart;
+  if (Number(slider.value) > maxStart) slider.value = maxStart;
 }
 
 window.goLiveWindow = function (chartKey) {
-  moveToLatestWindow(chartKey);
+  const state = patientChartState[chartKey];
+  const slider = document.getElementById(state.sliderId);
+  if (!slider) return;
+
+  const maxStart = Math.max(0, state.points.length - state.windowSize);
+  slider.value = maxStart;
+  renderWindow(chartKey, maxStart);
 };
+
+window.setPatientFilter = async function (chartKey, days) {
+  patientChartState[chartKey].filterDays = days;
+  await loadPatientChart(chartKey);
+};
+
+async function loadPatientChart(chartKey) {
+  const kindMap = {
+    ekg: "ecg",
+    hr: "heart_rate",
+    temp: "temperature"
+  };
+
+  try {
+    const days = patientChartState[chartKey].filterDays;
+    const res = await fetch(
+      `${API_URL}/measurements/${kindMap[chartKey]}?limit=500&days=${days}`,
+      {
+        headers: { Authorization: `Bearer ${TOKEN}` }
+      }
+    );
+
+    if (!res.ok) {
+      patientChartState[chartKey].points = [];
+    } else {
+      patientChartState[chartKey].points = await res.json();
+    }
+
+    if (chart) {
+      chart.destroy();
+      chart = null;
+    }
+
+    chart = buildChart(chartKey);
+    updateSlider(chartKey);
+
+    const maxStart = Math.max(0, patientChartState[chartKey].points.length - patientChartState[chartKey].windowSize);
+    const slider = document.getElementById(patientChartState[chartKey].sliderId);
+    if (slider) slider.value = maxStart;
+
+    renderWindow(chartKey, maxStart);
+
+  } catch (e) {
+    console.error("loadPatientChart err:", e);
+  }
+}
 
 /* ================= DOCTOR COMMENT ================= */
 async function loadDoctorComment() {
@@ -501,6 +398,7 @@ async function loadDoctorComment() {
 
     box.textContent = data.comment.comment ?? "Henüz doktor yorumu yok.";
     timeBox.textContent = `Tarih: ${formatDT(data.comment.created_at)} | Doktor ID: ${data.comment.doctor_id}`;
+
   } catch (e) {
     console.error("loadDoctorComment err:", e);
     box.textContent = "Yorum alınamadı (backend açık mı?)";
@@ -549,6 +447,7 @@ async function loadMyHistory() {
       `;
       list.appendChild(item);
     });
+
   } catch (e) {
     console.error(e);
     list.innerHTML = "Geçmiş alınamadı.";

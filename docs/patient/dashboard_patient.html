@@ -30,6 +30,7 @@
     </div>
 
     <div class="menu">
+      <button class="menu-btn" onclick="showSection('overview')">Özet</button>
       <button class="menu-btn" onclick="showSection('ekg')">EKG</button>
       <button class="menu-btn" onclick="showSection('hr')">Nabız</button>
       <button class="menu-btn" onclick="showSection('temp')">Sıcaklık</button>
@@ -47,7 +48,46 @@
       <div class="center-screen">
         <div>
           <h2>🌿 Sağlıklı günler dileriz</h2>
-          <p style="color: var(--muted); margin-top:8px;">Sol menüden bir bölüm seçebilirsin.</p>
+          <p style="color: var(--muted); margin-top:8px;">Soldaki menüden bir bölüm seçebilirsin.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="overview" class="page">
+      <h2>📊 Hasta Özeti</h2>
+
+      <div class="medical-cards">
+        <div class="medical-card ekg-card">
+          <div class="medical-top">
+            <div>
+              <div class="medical-label">EKG</div>
+              <div class="medical-sub">EKG Ritmi</div>
+            </div>
+            <div class="medical-icon">〰</div>
+          </div>
+          <div id="patientLastEcg" class="medical-value ekg-value">-</div>
+        </div>
+
+        <div class="medical-card hr-card">
+          <div class="medical-top">
+            <div>
+              <div class="medical-label">Nabız</div>
+              <div class="medical-sub">Kalp Atımı</div>
+            </div>
+            <div class="medical-icon">❤</div>
+          </div>
+          <div id="patientLastHr" class="medical-value hr-value">-</div>
+        </div>
+
+        <div class="medical-card temp-card">
+          <div class="medical-top">
+            <div>
+              <div class="medical-label">Sıcaklık</div>
+              <div class="medical-sub">Vücut Isısı</div>
+            </div>
+            <div class="medical-icon">🌡</div>
+          </div>
+          <div id="patientLastTemp" class="medical-value temp-value">-</div>
         </div>
       </div>
     </section>
@@ -55,6 +95,14 @@
     <!-- EKG -->
     <section id="ekg" class="page">
       <h2>EKG Grafiği</h2>
+
+      <div class="patient-card" style="margin-bottom:12px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="menu-btn" onclick="setPatientFilter('ekg', 1)">Son 24 Saat</button>
+          <button class="menu-btn" onclick="setPatientFilter('ekg', 7)">Son 7 Gün</button>
+          <button class="menu-btn" onclick="setPatientFilter('ekg', 30)">Son 30 Gün</button>
+        </div>
+      </div>
 
       <div class="chart-wrap">
         <div class="chart-canvas-wrap">
@@ -65,7 +113,7 @@
           <div class="chart-slider-head">
             <span>Geçmiş veriler arasında gezin</span>
             <div style="display:flex; align-items:center; gap:10px;">
-              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('ekg')">Canlıya Dön</button>
+              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('ekg')">En Sona Git</button>
               <span id="ekgRangeInfo">Son pencere</span>
             </div>
           </div>
@@ -78,6 +126,14 @@
     <section id="hr" class="page">
       <h2>Nabız Grafiği</h2>
 
+      <div class="patient-card" style="margin-bottom:12px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="menu-btn" onclick="setPatientFilter('hr', 1)">Son 24 Saat</button>
+          <button class="menu-btn" onclick="setPatientFilter('hr', 7)">Son 7 Gün</button>
+          <button class="menu-btn" onclick="setPatientFilter('hr', 30)">Son 30 Gün</button>
+        </div>
+      </div>
+
       <div class="chart-wrap">
         <div class="chart-canvas-wrap">
           <canvas id="hrChart"></canvas>
@@ -87,7 +143,7 @@
           <div class="chart-slider-head">
             <span>Geçmiş veriler arasında gezin</span>
             <div style="display:flex; align-items:center; gap:10px;">
-              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('hr')">Canlıya Dön</button>
+              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('hr')">En Sona Git</button>
               <span id="hrRangeInfo">Son pencere</span>
             </div>
           </div>
@@ -100,6 +156,14 @@
     <section id="temp" class="page">
       <h2>Sıcaklık Grafiği</h2>
 
+      <div class="patient-card" style="margin-bottom:12px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="menu-btn" onclick="setPatientFilter('temp', 1)">Son 24 Saat</button>
+          <button class="menu-btn" onclick="setPatientFilter('temp', 7)">Son 7 Gün</button>
+          <button class="menu-btn" onclick="setPatientFilter('temp', 30)">Son 30 Gün</button>
+        </div>
+      </div>
+
       <div class="chart-wrap">
         <div class="chart-canvas-wrap">
           <canvas id="tempChart"></canvas>
@@ -109,7 +173,7 @@
           <div class="chart-slider-head">
             <span>Geçmiş veriler arasında gezin</span>
             <div style="display:flex; align-items:center; gap:10px;">
-              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('temp')">Canlıya Dön</button>
+              <button class="menu-btn" style="padding:8px 12px;" onclick="goLiveWindow('temp')">En Sona Git</button>
               <span id="tempRangeInfo">Son pencere</span>
             </div>
           </div>
@@ -121,9 +185,11 @@
     <!-- AI -->
     <section id="ai" class="page">
       <h2>🧠 AI Teşhisi</h2>
-      <p style="color: var(--muted);">Şimdilik örnek ekran.</p>
-      <p><strong>Durum:</strong> Normal</p>
-      <p><strong>Risk:</strong> %3</p>
+      <p style="color: var(--muted);">MATLAB / AI hazır olduğunda bu bölümde analiz sonucu görünecek.</p>
+      <div class="patient-card">
+        <p><strong>Durum:</strong> Bekleniyor</p>
+        <p><strong>Risk:</strong> -</p>
+      </div>
     </section>
 
     <!-- DOCTOR COMMENT -->
