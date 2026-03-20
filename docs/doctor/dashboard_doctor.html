@@ -70,18 +70,38 @@
     <section id="overview" class="page">
       <h2>📊 Hasta Özeti</h2>
 
-      <div class="cards">
-        <div class="card">
-          <div class="label">Son EKG</div>
-          <div id="docLastEcg" class="value">-</div>
+      <div class="medical-cards">
+        <div class="medical-card ekg-card">
+          <div class="medical-top">
+            <div>
+              <div class="medical-label">Son EKG</div>
+              <div class="medical-sub">EKG Ritmi</div>
+            </div>
+            <div class="medical-icon">〰</div>
+          </div>
+          <div id="docLastEcg" class="medical-value ekg-value">-</div>
         </div>
-        <div class="card">
-          <div class="label">Sıcaklık</div>
-          <div id="docLastTemp" class="value">-</div>
+
+        <div class="medical-card hr-card">
+          <div class="medical-top">
+            <div>
+              <div class="medical-label">Nabız</div>
+              <div class="medical-sub">Kalp Atımı</div>
+            </div>
+            <div class="medical-icon">❤</div>
+          </div>
+          <div id="docLastHr" class="medical-value hr-value">-</div>
         </div>
-        <div class="card">
-          <div class="label">Nabız</div>
-          <div id="docLastHr" class="value">-</div>
+
+        <div class="medical-card temp-card">
+          <div class="medical-top">
+            <div>
+              <div class="medical-label">Sıcaklık</div>
+              <div class="medical-sub">Vücut Isısı</div>
+            </div>
+            <div class="medical-icon">🌡</div>
+          </div>
+          <div id="docLastTemp" class="medical-value temp-value">-</div>
         </div>
       </div>
 
