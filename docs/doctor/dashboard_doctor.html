@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Doktor Paneli</title>
 
-  <!-- doctor klasörünün içindeyse -->
   <link rel="stylesheet" href="../style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -15,13 +15,11 @@
   <!-- SOL PANEL -->
   <aside class="sidebar">
 
-    <!-- DOKTOR BİLGİ (BOZMA) -->
     <div class="patient-card">
       <h3>👨‍⚕️ Doktor</h3>
       <p style="color: var(--muted); margin:6px 0;">Giriş: <span id="docInfo">Yükleniyor...</span></p>
     </div>
 
-    <!-- HASTA SEÇİM -->
     <div class="patient-card patient-select-card">
       <h3>🧍 Hasta Seçimi</h3>
 
@@ -34,7 +32,6 @@
       </div>
     </div>
 
-    <!-- HASTA BİLGİ KARTI -->
     <div id="patientDetailCard" class="patient-card hidden">
       <h3>📋 Hasta Bilgileri</h3>
       <p><strong>Kullanıcı:</strong> <span id="pUsername">-</span></p>
@@ -42,8 +39,8 @@
       <p><strong>Rol:</strong> <span id="pRole">-</span></p>
     </div>
 
-    <!-- MENÜ (hasta seçilince açılır) -->
     <div id="doctorMenu" class="menu hidden">
+      <button class="menu-btn" onclick="showSection('overview')">Özet</button>
       <button class="menu-btn" onclick="showSection('ekg')">EKG</button>
       <button class="menu-btn" onclick="showSection('hr')">Nabız</button>
       <button class="menu-btn" onclick="showSection('temp')">Sıcaklık</button>
@@ -59,7 +56,6 @@
 
     <button id="backBtn" class="back-btn hidden" onclick="goHome()">← Geri</button>
 
-    <!-- HOME -->
     <section id="home" class="page active">
       <div class="center-screen">
         <div>
@@ -71,31 +67,127 @@
       </div>
     </section>
 
-    <!-- EKG -->
+    <section id="overview" class="page">
+      <h2>📊 Hasta Özeti</h2>
+
+      <div class="cards">
+        <div class="card">
+          <div class="label">Son EKG</div>
+          <div id="docLastEcg" class="value">-</div>
+        </div>
+        <div class="card">
+          <div class="label">Sıcaklık</div>
+          <div id="docLastTemp" class="value">-</div>
+        </div>
+        <div class="card">
+          <div class="label">Nabız</div>
+          <div id="docLastHr" class="value">-</div>
+        </div>
+      </div>
+
+      <div class="patient-card">
+        <p style="margin:0; color:var(--muted);">
+          Seçili hasta: <strong><span id="overviewPatientLabel">-</span></strong>
+        </p>
+      </div>
+    </section>
+
     <section id="ekg" class="page">
       <h2>EKG</h2>
-      <p style="color: var(--muted);">Bu bölüm (sonraki adım) — seçilen hastanın EKG grafiği.</p>
+
+      <div class="patient-card" style="margin-bottom:12px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="menu-btn" onclick="setDoctorFilter('ekg', 1)">Son 24 Saat</button>
+          <button class="menu-btn" onclick="setDoctorFilter('ekg', 7)">Son 7 Gün</button>
+          <button class="menu-btn" onclick="setDoctorFilter('ekg', 30)">Son 30 Gün</button>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="chart-canvas-wrap">
+          <canvas id="doctorEkgChart"></canvas>
+        </div>
+
+        <div class="chart-slider-wrap">
+          <div class="chart-slider-head">
+            <span>Geçmiş veriler arasında gezin</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <button class="menu-btn" style="padding:8px 12px;" onclick="doctorGoLiveWindow('ekg')">En Sona Git</button>
+              <span id="doctorEkgRangeInfo">Son pencere</span>
+            </div>
+          </div>
+          <input id="doctorEkgRange" class="chart-range" type="range" min="0" max="0" value="0">
+        </div>
+      </div>
     </section>
 
-    <!-- HR -->
     <section id="hr" class="page">
       <h2>Nabız</h2>
-      <p style="color: var(--muted);">Bu bölüm (sonraki adım) — seçilen hastanın nabız grafiği.</p>
+
+      <div class="patient-card" style="margin-bottom:12px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="menu-btn" onclick="setDoctorFilter('hr', 1)">Son 24 Saat</button>
+          <button class="menu-btn" onclick="setDoctorFilter('hr', 7)">Son 7 Gün</button>
+          <button class="menu-btn" onclick="setDoctorFilter('hr', 30)">Son 30 Gün</button>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="chart-canvas-wrap">
+          <canvas id="doctorHrChart"></canvas>
+        </div>
+
+        <div class="chart-slider-wrap">
+          <div class="chart-slider-head">
+            <span>Geçmiş veriler arasında gezin</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <button class="menu-btn" style="padding:8px 12px;" onclick="doctorGoLiveWindow('hr')">En Sona Git</button>
+              <span id="doctorHrRangeInfo">Son pencere</span>
+            </div>
+          </div>
+          <input id="doctorHrRange" class="chart-range" type="range" min="0" max="0" value="0">
+        </div>
+      </div>
     </section>
 
-    <!-- TEMP -->
     <section id="temp" class="page">
       <h2>Sıcaklık</h2>
-      <p style="color: var(--muted);">Bu bölüm (sonraki adım) — seçilen hastanın sıcaklık grafiği.</p>
+
+      <div class="patient-card" style="margin-bottom:12px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="menu-btn" onclick="setDoctorFilter('temp', 1)">Son 24 Saat</button>
+          <button class="menu-btn" onclick="setDoctorFilter('temp', 7)">Son 7 Gün</button>
+          <button class="menu-btn" onclick="setDoctorFilter('temp', 30)">Son 30 Gün</button>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="chart-canvas-wrap">
+          <canvas id="doctorTempChart"></canvas>
+        </div>
+
+        <div class="chart-slider-wrap">
+          <div class="chart-slider-head">
+            <span>Geçmiş veriler arasında gezin</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <button class="menu-btn" style="padding:8px 12px;" onclick="doctorGoLiveWindow('temp')">En Sona Git</button>
+              <span id="doctorTempRangeInfo">Son pencere</span>
+            </div>
+          </div>
+          <input id="doctorTempRange" class="chart-range" type="range" min="0" max="0" value="0">
+        </div>
+      </div>
     </section>
 
-    <!-- AI -->
     <section id="ai" class="page">
       <h2>🧠 AI Teşhisi</h2>
-      <p style="color: var(--muted);">Bu bölüm (sonraki adım) — seçilen hastaya ait AI çıktısı.</p>
+      <div class="patient-card">
+        <p style="color: var(--muted);">
+          MATLAB / AI hazır olduğunda bu bölümde seçilen hastanın analiz sonucu görünecek.
+        </p>
+      </div>
     </section>
 
-    <!-- COMMENT -->
     <section id="comment" class="page">
       <h2>📝 Doktor Yorumu</h2>
 
@@ -109,13 +201,9 @@
 
       <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
         <button class="menu-btn" style="background: var(--ok); color:#03100c;" onclick="saveComment()">Kaydet</button>
-        <button class="menu-btn" onclick="toggleHistory()">📜 Eski Yorumlarlar</button>
+        <button class="menu-btn" onclick="toggleHistory()">📜 Eski Yorumlar</button>
       </div>
 
-      
-      
-
-      <!-- GEÇMİŞ -->
       <div id="historyWrap" class="patient-card hidden" style="margin-top:14px;">
         <h3 style="margin:0 0 10px 0; color:var(--muted); font-size:13px;">📜 Eski Yorumlar</h3>
         <div id="historyList" style="display:flex; flex-direction:column; gap:10px;"></div>
