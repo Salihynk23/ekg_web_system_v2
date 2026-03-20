@@ -11,30 +11,35 @@ let timer = null;
 let chart = null;
 let activeChartKey = null;
 
+const TOTAL_SECONDS = 60;
+
 const chartState = {
   ekg: {
     points: [],
-    windowSize: 40,
+    windowSize: TOTAL_SECONDS,
     sliderId: "ekgRange",
     infoId: "ekgRangeInfo",
     autoFollow: true,
-    visibleSlice: []
+    visibleSlice: [],
+    seedValue: 1.0
   },
   hr: {
     points: [],
-    windowSize: 30,
+    windowSize: TOTAL_SECONDS,
     sliderId: "hrRange",
     infoId: "hrRangeInfo",
     autoFollow: true,
-    visibleSlice: []
+    visibleSlice: [],
+    seedValue: 75
   },
   temp: {
     points: [],
-    windowSize: 30,
+    windowSize: TOTAL_SECONDS,
     sliderId: "tempRange",
     infoId: "tempRangeInfo",
     autoFollow: true,
-    visibleSlice: []
+    visibleSlice: [],
+    seedValue: 36.8
   }
 };
 
@@ -51,7 +56,7 @@ function formatDT(dtStr) {
   return d.toLocaleString("tr-TR");
 }
 
-function formatShortDT(dtStr) {
+function formatSecondLabel(dtStr) {
   if (!dtStr) return "-";
   const d = new Date(dtStr);
   if (isNaN(d.getTime())) return dtStr;
@@ -122,7 +127,7 @@ window.showSection = function (id) {
   if (id === "doctor") loadDoctorComment();
 };
 
-/* ================= LIVE CHART ================= */
+/* ================= CHART CORE ================= */
 function stopLive() {
   if (timer) {
     clearInterval(timer);
@@ -137,15 +142,19 @@ function stopLive() {
 
 function getAxisLimits(chartKey) {
   if (chartKey === "temp") {
-    return { min: 35.8, max: 38.0 };
+    return { min: 35.5, max: 38.5, stepSize: 0.5 };
   }
   if (chartKey === "hr") {
-    return { min: 50, max: 110 };
+    return { min: 40, max: 140, stepSize: 10 };
   }
   if (chartKey === "ekg") {
-    return { min: 0.8, max: 2.1 };
+    return { min: 0.0, max: 2.2, stepSize: 0.2 };
   }
   return {};
+}
+
+function buildFixedLabels(state) {
+  return state.visibleSlice.map(p => formatSecondLabel(p.time));
 }
 
 function buildChart(canvasId, label, color, chartKey) {
@@ -156,21 +165,22 @@ function buildChart(canvasId, label, color, chartKey) {
   activeChartKey = chartKey;
 
   const axis = getAxisLimits(chartKey);
+  const state = chartState[chartKey];
 
   return new Chart(ctx, {
     type: "line",
     data: {
-      labels: [],
+      labels: buildFixedLabels(state),
       datasets: [{
         label,
-        data: [],
+        data: state.visibleSlice.map(p => p.value),
         borderColor: color,
         backgroundColor: color,
         borderWidth: 4,
-        tension: 0.28,
-        pointRadius: 4,
-        pointHoverRadius: 7,
-        pointHitRadius: 12,
+        tension: chartKey === "ekg" ? 0.15 : 0.28,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        pointHitRadius: 10,
         pointBackgroundColor: "#ffffff",
         pointBorderColor: color,
         pointBorderWidth: 2,
@@ -181,6 +191,7 @@ function buildChart(canvasId, label, color, chartKey) {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
+      normalized: true,
       interaction: {
         mode: "index",
         intersect: false
@@ -205,8 +216,7 @@ function buildChart(canvasId, label, color, chartKey) {
           callbacks: {
             title(items) {
               const i = items[0]?.dataIndex ?? 0;
-              const state = chartState[activeChartKey];
-              const current = state?.visibleSlice?.[i];
+              const current = chartState[activeChartKey]?.visibleSlice?.[i];
               return current ? formatDT(current.time) : "";
             },
             label(context) {
@@ -218,13 +228,14 @@ function buildChart(canvasId, label, color, chartKey) {
       },
       scales: {
         x: {
+          offset: false,
           ticks: {
             color: "#aab1c7",
             maxRotation: 0,
             autoSkip: true,
-            maxTicksLimit: 8,
+            maxTicksLimit: 10,
             font: {
-              size: 13
+              size: 12
             }
           },
           grid: {
@@ -238,9 +249,10 @@ function buildChart(canvasId, label, color, chartKey) {
           min: axis.min,
           max: axis.max,
           ticks: {
+            stepSize: axis.stepSize,
             color: "#aab1c7",
             font: {
-              size: 13
+              size: 12
             }
           },
           grid: {
@@ -264,29 +276,35 @@ function bindRangeInputs() {
     slider.addEventListener("input", () => {
       const sliderValue = Number(slider.value);
       const maxStart = Math.max(0, state.points.length - state.windowSize);
-
       state.autoFollow = sliderValue >= maxStart;
       renderWindow(key, sliderValue);
     });
   });
 }
 
+/* ================= FIXED 60s WINDOW ================= */
 function seedInitialWindow(chartKey) {
   const state = chartState[chartKey];
   if (!state || state.points.length) return;
 
   const now = Date.now();
-  let baseValue = 0;
 
-  if (chartKey === "temp") baseValue = 36.8;
-  if (chartKey === "hr") baseValue = 78;
-  if (chartKey === "ekg") baseValue = 1.1;
-
-  for (let i = state.windowSize; i > 0; i--) {
+  for (let i = TOTAL_SECONDS - 1; i >= 0; i--) {
     state.points.push({
       time: new Date(now - i * 1000).toISOString(),
-      value: baseValue
+      value: state.seedValue,
+      placeholder: true
     });
+  }
+}
+
+function replaceSeedIfNeeded(chartKey) {
+  const state = chartState[chartKey];
+  if (!state.points.length) return;
+
+  const hasOnlySeed = state.points.every(p => p.placeholder === true);
+  if (hasOnlySeed) {
+    state.points = [];
   }
 }
 
@@ -294,23 +312,15 @@ function pushHistoryPoint(chartKey, value, timeStr = new Date().toISOString()) {
   const state = chartState[chartKey];
   if (!state) return;
 
-  if (
-    state.points.length &&
-    state.points.every(p =>
-      (chartKey === "temp" && p.value === 36.8) ||
-      (chartKey === "hr" && p.value === 78) ||
-      (chartKey === "ekg" && p.value === 1.1)
-    )
-  ) {
-    state.points = [];
-  }
+  replaceSeedIfNeeded(chartKey);
 
   state.points.push({
     time: timeStr,
-    value: Number(value)
+    value: Number(value),
+    placeholder: false
   });
 
-  if (state.points.length > 500) {
+  if (state.points.length > 600) {
     state.points.shift();
   }
 
@@ -350,24 +360,43 @@ function moveToLatestWindow(chartKey) {
 }
 
 function renderWindow(chartKey, startIndex = 0) {
-  if (!chart || activeChartKey !== chartKey) return;
-
   const state = chartState[chartKey];
+  if (!state) return;
+
   const endIndex = Math.min(startIndex + state.windowSize, state.points.length);
-  const slice = state.points.slice(startIndex, endIndex);
+  let slice = state.points.slice(startIndex, endIndex);
+
+  if (slice.length < state.windowSize) {
+    const missing = state.windowSize - slice.length;
+    const firstTime = slice.length ? new Date(slice[0].time).getTime() : Date.now();
+
+    const padding = [];
+    for (let i = missing; i > 0; i--) {
+      padding.push({
+        time: new Date(firstTime - i * 1000).toISOString(),
+        value: state.seedValue,
+        placeholder: true
+      });
+    }
+    slice = [...padding, ...slice];
+  }
 
   state.visibleSlice = slice;
 
-  chart.data.labels = slice.map(p => formatShortDT(p.time));
-  chart.data.datasets[0].data = slice.map(p => p.value);
-  chart.update("none");
+  if (chart && activeChartKey === chartKey) {
+    chart.data.labels = slice.map(p => formatSecondLabel(p.time));
+    chart.data.datasets[0].data = slice.map(p => p.value);
+    chart.update("none");
+  }
 
   const info = document.getElementById(state.infoId);
   if (info) {
-    if (!slice.length) {
-      info.textContent = "Veri yok";
+    const realCount = state.points.length;
+    const maxEnd = Math.min(startIndex + state.windowSize, realCount);
+    if (!realCount) {
+      info.textContent = `0-0 / 0`;
     } else {
-      info.textContent = `${startIndex + 1}-${endIndex} / ${state.points.length}`;
+      info.textContent = `${startIndex + 1}-${maxEnd} / ${realCount}`;
     }
   }
 }
@@ -380,10 +409,12 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
   };
 
   seedInitialWindow(chartKey);
+  renderWindow(chartKey, 0);
+
   chart = buildChart(canvasId, label, colorMap[chartKey], chartKey);
   if (!chart) return;
 
-  renderWindow(chartKey, Math.max(0, chartState[chartKey].points.length - chartState[chartKey].windowSize));
+  moveToLatestWindow(chartKey);
 
   timer = setInterval(async () => {
     try {
@@ -398,8 +429,11 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
       if (!latestRes.ok) return;
 
       const latest = await latestRes.json();
-      pushHistoryPoint(chartKey, latest[field], latest.created_at || new Date().toISOString());
-
+      pushHistoryPoint(
+        chartKey,
+        latest[field],
+        latest.created_at || new Date().toISOString()
+      );
     } catch (e) {
       console.log("live latest err", e);
     }
@@ -408,10 +442,12 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
 
 async function startLiveECG() {
   seedInitialWindow("ekg");
+  renderWindow("ekg", 0);
+
   chart = buildChart("ekgChart", "EKG", "#38bdf8", "ekg");
   if (!chart) return;
 
-  renderWindow("ekg", Math.max(0, chartState.ekg.points.length - chartState.ekg.windowSize));
+  moveToLatestWindow("ekg");
 
   timer = setInterval(async () => {
     try {
@@ -435,10 +471,10 @@ async function startLiveECG() {
     } catch (e) {
       console.log("live ecg err", e);
     }
-  }, 500);
+  }, 1000);
 }
 
-window.goLiveWindow = function(chartKey) {
+window.goLiveWindow = function (chartKey) {
   moveToLatestWindow(chartKey);
 };
 
@@ -469,7 +505,6 @@ async function loadDoctorComment() {
 
     box.textContent = data.comment.comment ?? "Henüz doktor yorumu yok.";
     timeBox.textContent = `Tarih: ${formatDT(data.comment.created_at)} | Doktor ID: ${data.comment.doctor_id}`;
-
   } catch (e) {
     console.error("loadDoctorComment err:", e);
     box.textContent = "Yorum alınamadı (backend açık mı?)";
@@ -518,7 +553,6 @@ async function loadMyHistory() {
       `;
       list.appendChild(item);
     });
-
   } catch (e) {
     console.error(e);
     list.innerHTML = "Geçmiş alınamadı.";
