@@ -20,8 +20,7 @@ const chartState = {
     sliderId: "ekgRange",
     infoId: "ekgRangeInfo",
     autoFollow: true,
-    visibleSlice: [],
-    seedValue: 1.0
+    visibleSlice: []
   },
   hr: {
     points: [],
@@ -29,8 +28,7 @@ const chartState = {
     sliderId: "hrRange",
     infoId: "hrRangeInfo",
     autoFollow: true,
-    visibleSlice: [],
-    seedValue: 75
+    visibleSlice: []
   },
   temp: {
     points: [],
@@ -38,8 +36,7 @@ const chartState = {
     sliderId: "tempRange",
     infoId: "tempRangeInfo",
     autoFollow: true,
-    visibleSlice: [],
-    seedValue: 36.8
+    visibleSlice: []
   }
 };
 
@@ -57,7 +54,7 @@ function formatDT(dtStr) {
 }
 
 function formatSecondLabel(dtStr) {
-  if (!dtStr) return "-";
+  if (!dtStr) return "";
   const d = new Date(dtStr);
   if (isNaN(d.getTime())) return dtStr;
   return d.toLocaleTimeString("tr-TR", {
@@ -153,10 +150,6 @@ function getAxisLimits(chartKey) {
   return {};
 }
 
-function buildFixedLabels(state) {
-  return state.visibleSlice.map(p => formatSecondLabel(p.time));
-}
-
 function buildChart(canvasId, label, color, chartKey) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return null;
@@ -165,15 +158,14 @@ function buildChart(canvasId, label, color, chartKey) {
   activeChartKey = chartKey;
 
   const axis = getAxisLimits(chartKey);
-  const state = chartState[chartKey];
 
   return new Chart(ctx, {
     type: "line",
     data: {
-      labels: buildFixedLabels(state),
+      labels: [],
       datasets: [{
         label,
-        data: state.visibleSlice.map(p => p.value),
+        data: [],
         borderColor: color,
         backgroundColor: color,
         borderWidth: 4,
@@ -282,42 +274,13 @@ function bindRangeInputs() {
   });
 }
 
-/* ================= FIXED 60s WINDOW ================= */
-function seedInitialWindow(chartKey) {
-  const state = chartState[chartKey];
-  if (!state || state.points.length) return;
-
-  const now = Date.now();
-
-  for (let i = TOTAL_SECONDS - 1; i >= 0; i--) {
-    state.points.push({
-      time: new Date(now - i * 1000).toISOString(),
-      value: state.seedValue,
-      placeholder: true
-    });
-  }
-}
-
-function replaceSeedIfNeeded(chartKey) {
-  const state = chartState[chartKey];
-  if (!state.points.length) return;
-
-  const hasOnlySeed = state.points.every(p => p.placeholder === true);
-  if (hasOnlySeed) {
-    state.points = [];
-  }
-}
-
 function pushHistoryPoint(chartKey, value, timeStr = new Date().toISOString()) {
   const state = chartState[chartKey];
   if (!state) return;
 
-  replaceSeedIfNeeded(chartKey);
-
   state.points.push({
     time: timeStr,
-    value: Number(value),
-    placeholder: false
+    value: Number(value)
   });
 
   if (state.points.length > 600) {
@@ -364,22 +327,7 @@ function renderWindow(chartKey, startIndex = 0) {
   if (!state) return;
 
   const endIndex = Math.min(startIndex + state.windowSize, state.points.length);
-  let slice = state.points.slice(startIndex, endIndex);
-
-  if (slice.length < state.windowSize) {
-    const missing = state.windowSize - slice.length;
-    const firstTime = slice.length ? new Date(slice[0].time).getTime() : Date.now();
-
-    const padding = [];
-    for (let i = missing; i > 0; i--) {
-      padding.push({
-        time: new Date(firstTime - i * 1000).toISOString(),
-        value: state.seedValue,
-        placeholder: true
-      });
-    }
-    slice = [...padding, ...slice];
-  }
+  const slice = state.points.slice(startIndex, endIndex);
 
   state.visibleSlice = slice;
 
@@ -391,12 +339,11 @@ function renderWindow(chartKey, startIndex = 0) {
 
   const info = document.getElementById(state.infoId);
   if (info) {
-    const realCount = state.points.length;
-    const maxEnd = Math.min(startIndex + state.windowSize, realCount);
-    if (!realCount) {
-      info.textContent = `0-0 / 0`;
+    const total = state.points.length;
+    if (!total) {
+      info.textContent = "0-0 / 0";
     } else {
-      info.textContent = `${startIndex + 1}-${maxEnd} / ${realCount}`;
+      info.textContent = `${startIndex + 1}-${endIndex} / ${total}`;
     }
   }
 }
@@ -408,13 +355,10 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
     temp: "#f59e0b"
   };
 
-  seedInitialWindow(chartKey);
-  renderWindow(chartKey, 0);
-
   chart = buildChart(canvasId, label, colorMap[chartKey], chartKey);
   if (!chart) return;
 
-  moveToLatestWindow(chartKey);
+  renderWindow(chartKey, 0);
 
   timer = setInterval(async () => {
     try {
@@ -441,13 +385,10 @@ async function startLiveLatest(field, label, canvasId, intervalMs, chartKey) {
 }
 
 async function startLiveECG() {
-  seedInitialWindow("ekg");
-  renderWindow("ekg", 0);
-
   chart = buildChart("ekgChart", "EKG", "#38bdf8", "ekg");
   if (!chart) return;
 
-  moveToLatestWindow("ekg");
+  renderWindow("ekg", 0);
 
   timer = setInterval(async () => {
     try {
