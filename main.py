@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import engine, SessionLocal
 import models
-from routers import users, measurements, comments, ecg
+from routers import users, measurements, comments, ecg, matlab_ingest
 from auth import hash_password
 
 models.Base.metadata.create_all(bind=engine)
@@ -59,6 +59,7 @@ app.include_router(users.router)
 app.include_router(measurements.router)
 app.include_router(comments.router)
 app.include_router(ecg.router)
+app.include_router(matlab_ingest.router)
 
 
 @app.get("/")

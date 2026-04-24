@@ -9,8 +9,8 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
-    password = Column(String, nullable=False)   # hashli şifre burada tutulacak
-    role = Column(String, nullable=False)       # "doctor" | "patient"
+    password = Column(String, nullable=False)
+    role = Column(String, nullable=False)
 
     full_name = Column(String, nullable=True)
     age = Column(Integer, nullable=True)
@@ -23,7 +23,7 @@ class Measurement(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    kind = Column(String, index=True, nullable=False)   # ecg / heart_rate / temperature
+    kind = Column(String, index=True, nullable=False)
     value = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
@@ -54,3 +54,22 @@ class ECG(Base):
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
     user = relationship("User")
+
+
+class AnalysisResult(Base):
+    __tablename__ = "analysis_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+
+    ai_class = Column(String, nullable=False)
+    ai_comment = Column(Text, nullable=True)
+
+    risk_level = Column(String, nullable=True)
+    risk_score = Column(Float, nullable=True)
+
+    diagnosis = Column(String, nullable=True)
+    model_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    patient = relationship("User", foreign_keys=[patient_id])

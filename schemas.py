@@ -93,3 +93,24 @@ class CommentOut(BaseModel):
 
 class LatestCommentOut(BaseModel):
     comment: Optional[CommentOut] = None
+    # ======================
+# MATLAB INGEST
+# ======================
+class MatlabIngestIn(BaseModel):
+    patient_id: int
+    ecg_value: float
+    heart_rate: float
+    temperature: float
+
+    ai_class: str
+    ai_comment: Optional[str] = None
+
+    risk_level: Optional[str] = None
+    risk_score: Optional[float] = None
+    diagnosis: Optional[str] = None
+    model_name: Optional[str] = None
+
+
+class MatlabIngestOut(BaseModel):
+    ok: bool
+    message: str
