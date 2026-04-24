@@ -148,6 +148,7 @@ window.onPatientChange = async function () {
     }
     doctorActiveChartKey = null;
 
+    clearDoctorAiBox();
     goHome();
     return;
   }
@@ -178,6 +179,7 @@ window.onPatientChange = async function () {
 
   await loadLatestCommentSafe();
   await loadPatientOverview();
+  await loadDoctorAiLive();
   goHome();
 };
 
@@ -209,6 +211,9 @@ window.showSection = async function (id) {
   }
   if (id === "temp") {
     await loadDoctorChart("temp");
+  }
+  if (id === "ai") {
+    await loadDoctorAiLive();
   }
 };
 
@@ -264,6 +269,59 @@ async function loadPatientOverview() {
     console.error("overview error:", e);
   }
 }
+
+/* ================= AI LIVE ================= */
+function clearDoctorAiBox() {
+  if ($("docAiClass")) $("docAiClass").textContent = "-";
+  if ($("docAiRisk")) $("docAiRisk").textContent = "-";
+  if ($("docAiScore")) $("docAiScore").textContent = "-";
+  if ($("docAiDiagnosis")) $("docAiDiagnosis").textContent = "-";
+  if ($("docAiModel")) $("docAiModel").textContent = "-";
+  if ($("docAiComment")) $("docAiComment").textContent = "-";
+  if ($("docAiTime")) $("docAiTime").textContent = "-";
+}
+
+async function loadDoctorAiLive() {
+  if (!selectedPatient) return;
+
+  try {
+    const res = await fetch(`${API_URL}/matlab/analysis/patient/${selectedPatient.id}/latest`);
+    if (!res.ok) {
+      clearDoctorAiBox();
+      return;
+    }
+
+    const data = await res.json();
+    if (!data.result) {
+      clearDoctorAiBox();
+      return;
+    }
+
+    const r = data.result;
+
+    $("docAiClass").textContent = r.ai_class ?? "-";
+    $("docAiRisk").textContent = r.risk_level ?? "-";
+    $("docAiScore").textContent = r.risk_score ?? "-";
+    $("docAiDiagnosis").textContent = r.diagnosis ?? "-";
+    $("docAiModel").textContent = r.model_name ?? "-";
+    $("docAiComment").textContent = r.ai_comment ?? "-";
+
+    const dt = new Date(r.created_at + "Z");
+    $("docAiTime").textContent =
+      dt.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
+
+  } catch (err) {
+    console.error("Doctor AI live error:", err);
+    clearDoctorAiBox();
+  }
+}
+
+setInterval(() => {
+  const aiPage = $("ai");
+  if (aiPage && aiPage.classList.contains("active") && selectedPatient) {
+    loadDoctorAiLive();
+  }
+}, 5000);
 
 /* ================= CHART ================= */
 function getDoctorAxisLimits(chartKey) {

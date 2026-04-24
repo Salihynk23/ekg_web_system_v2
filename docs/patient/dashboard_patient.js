@@ -134,6 +134,9 @@ window.showSection = async function (id) {
   if (id === "doctor") {
     await loadDoctorComment();
   }
+  if (id === "ai") {
+    await loadMyAiLive();
+  }
 };
 
 /* ================= OVERVIEW ================= */
@@ -370,6 +373,40 @@ async function loadPatientChart(chartKey) {
     console.error("loadPatientChart err:", e);
   }
 }
+
+/* ================= AI LIVE ================= */
+async function loadMyAiLive() {
+  try {
+    const res = await fetch(`${API_URL}/matlab/analysis/patient/${me.id}/latest`);
+    if (!res.ok) return;
+
+    const data = await res.json();
+    if (!data.result) return;
+
+    const r = data.result;
+
+    document.getElementById("aiClass").textContent = r.ai_class ?? "-";
+    document.getElementById("aiRisk").textContent = r.risk_level ?? "-";
+    document.getElementById("aiScore").textContent = r.risk_score ?? "-";
+    document.getElementById("aiDiagnosis").textContent = r.diagnosis ?? "-";
+    document.getElementById("aiModel").textContent = r.model_name ?? "-";
+    document.getElementById("aiComment").textContent = r.ai_comment ?? "-";
+
+    const dt = new Date(r.created_at + "Z");
+    document.getElementById("aiTime").textContent =
+      dt.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
+
+  } catch (err) {
+    console.error("AI live error:", err);
+  }
+}
+
+setInterval(() => {
+  const aiPage = document.getElementById("ai");
+  if (aiPage && aiPage.classList.contains("active") && me) {
+    loadMyAiLive();
+  }
+}, 5000);
 
 /* ================= DOCTOR COMMENT ================= */
 async function loadDoctorComment() {
