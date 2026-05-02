@@ -7,12 +7,24 @@ if (!TOKEN) {
 }
 
 const SIMULATED_PATIENT_ID = 3;
+const LIVE_AI_MS = 5000;
+const SIM_CRISIS_AFTER_MS = 3 * 60 * 1000;
+const SIM_CRISIS_CONFIRM_MS = 10 * 1000;
 
 let currentDoctor = null;
 let selectedPatient = null;
 let doctorChart = null;
 let doctorActiveChartKey = null;
 let lastRealAiId = null;
+
+let doctorAlarmAudioCtx = null;
+let doctorAlarmTimer = null;
+
+const doctorSimScenario = {
+  sessionStartMs: null,
+  crisisStartedAtMs: null,
+  crisisConfirmed: false
+};
 
 /* ================= LIVE TIMERS ================= */
 let doctorLiveTimers = {
@@ -160,6 +172,102 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
+/* ================= EMERGENCY ================= */
+function resetDoctorSimScenario() {
+  doctorSimScenario.sessionStartMs = Date.now();
+  doctorSimScenario.crisisStartedAtMs = null;
+  doctorSimScenario.crisisConfirmed = false;
+  hideEmergencyOverlay();
+  silenceEmergencyAlarm();
+}
+
+function getDoctorSimElapsedMs() {
+  if (!doctorSimScenario.sessionStartMs) return 0;
+  return Date.now() - doctorSimScenario.sessionStartMs;
+}
+
+function updateDoctorSimScenario() {
+  if (!isSimulatedPatient()) return;
+
+  const elapsed = getDoctorSimElapsedMs();
+
+  if (elapsed >= SIM_CRISIS_AFTER_MS) {
+    if (!doctorSimScenario.crisisStartedAtMs) {
+      doctorSimScenario.crisisStartedAtMs = Date.now();
+    }
+
+    const duration = Date.now() - doctorSimScenario.crisisStartedAtMs;
+    if (duration >= SIM_CRISIS_CONFIRM_MS) {
+      doctorSimScenario.crisisConfirmed = true;
+    }
+  }
+}
+
+function isDoctorCriticalPhase() {
+  updateDoctorSimScenario();
+  return isSimulatedPatient() && doctorSimScenario.crisisConfirmed;
+}
+
+function showEmergencyOverlay() {
+  const overlay = $("emergencyOverlay");
+  const details = $("emergencyOverlayDetails");
+  if (!overlay) return;
+
+  overlay.style.display = "flex";
+
+  if (details) {
+    details.innerHTML = `
+      <strong>Hasta:</strong> ${escapeHtml(selectedPatient?.username || "-")}<br>
+      <strong>Durum:</strong> Süregelen kritik kardiyak olay senaryosu<br>
+      <strong>Eylem:</strong> Acil müdahale protokolü başlatılmalı
+    `;
+  }
+}
+
+window.hideEmergencyOverlay = function () {
+  const overlay = $("emergencyOverlay");
+  if (overlay) overlay.style.display = "none";
+};
+
+function beepEmergency() {
+  try {
+    if (!doctorAlarmAudioCtx) {
+      doctorAlarmAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    const ctx = doctorAlarmAudioCtx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sawtooth";
+    osc.frequency.value = 880;
+
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.24);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.26);
+  } catch (e) {
+    console.error("alarm beep error", e);
+  }
+}
+
+function startEmergencyAlarm() {
+  if (doctorAlarmTimer) return;
+  beepEmergency();
+  doctorAlarmTimer = setInterval(beepEmergency, 1000);
+}
+
+window.silenceEmergencyAlarm = function () {
+  if (doctorAlarmTimer) {
+    clearInterval(doctorAlarmTimer);
+    doctorAlarmTimer = null;
+  }
+};
+
 /* ================= AUTH ================= */
 async function loadMeDoctor() {
   try {
@@ -279,10 +387,13 @@ window.onPatientChange = async function () {
     doctorMode.hr = "live";
     doctorMode.temp = "live";
     initSimulatedAi();
+    resetDoctorSimScenario();
   } else {
     doctorMode.ekg = "history";
     doctorMode.hr = "history";
     doctorMode.temp = "history";
+    hideEmergencyOverlay();
+    silenceEmergencyAlarm();
   }
 
   await loadLatestCommentSafe();
@@ -382,21 +493,21 @@ async function loadPatientOverview() {
 function getDoctorAxisLimits(chartKey) {
   if (chartKey === "temp") {
     if (isSimulatedPatient() && doctorMode[chartKey] === "live") {
-      return { min: 36.45, max: 36.75, step: 0.05 };
+      return { min: 36.45, max: 37.35, step: 0.1 };
     }
     return { min: 35.5, max: 38.5, step: 0.5 };
   }
 
   if (chartKey === "hr") {
     if (isSimulatedPatient() && doctorMode[chartKey] === "live") {
-      return { min: 60, max: 100, step: 5 };
+      return { min: 60, max: 170, step: 10 };
     }
     return { min: 40, max: 140, step: 10 };
   }
 
   if (chartKey === "ekg") {
     if (isSimulatedPatient() && doctorMode[chartKey] === "live") {
-      return { min: -0.5, max: 1.3, step: 0.2 };
+      return { min: -0.5, max: 1.4, step: 0.2 };
     }
     return { min: 0.0, max: 2.2, step: 0.2 };
   }
@@ -762,7 +873,17 @@ async function loadDoctorChart(chartKey) {
 
 /* ================= LIVE DATA GENERATORS ================= */
 function generateDoctorLiveHr() {
+  updateDoctorSimScenario();
+
   const s = doctorLiveGenerator.hr;
+
+  if (isDoctorCriticalPhase()) {
+    const target = 138 + 14 * Math.sin(Date.now() / 2200) + rand(-6, 6);
+    s.value += (target - s.value) * 0.24 + rand(-4, 4);
+    s.value = clamp(s.value, 118, 168);
+    return Math.round(s.value);
+  }
+
   s.drift += rand(-0.6, 0.6);
   s.drift = clamp(s.drift, -4, 4);
 
@@ -774,7 +895,17 @@ function generateDoctorLiveHr() {
 }
 
 function generateDoctorLiveTemp() {
+  updateDoctorSimScenario();
+
   const s = doctorLiveGenerator.temp;
+
+  if (isDoctorCriticalPhase()) {
+    const target = 37.15 + 0.06 * Math.sin(Date.now() / 9000);
+    s.value += (target - s.value) * 0.10 + rand(-0.01, 0.01);
+    s.value = clamp(s.value, 36.95, 37.35);
+    return Number(s.value.toFixed(2));
+  }
+
   const slowWave = 36.60 + 0.02 * Math.sin(Date.now() / 60000);
   s.value += (slowWave - s.value) * 0.15 + rand(-0.006, 0.006);
   s.value = clamp(s.value, 36.55, 36.65);
@@ -782,6 +913,8 @@ function generateDoctorLiveTemp() {
 }
 
 function generateDoctorLiveEkg() {
+  updateDoctorSimScenario();
+
   const s = doctorLiveGenerator.ekg;
   const hr = doctorLiveGenerator.hr.value || 78;
 
@@ -794,13 +927,25 @@ function generateDoctorLiveEkg() {
   const t = s.phase;
 
   let value = 0;
-  value += 0.10 * Math.exp(-Math.pow((t - 0.18) / 0.035, 2));
-  value += -0.14 * Math.exp(-Math.pow((t - 0.36) / 0.012, 2));
-  value += 1.08 * Math.exp(-Math.pow((t - 0.40) / 0.008, 2));
-  value += -0.28 * Math.exp(-Math.pow((t - 0.43) / 0.014, 2));
-  value += 0.28 * Math.exp(-Math.pow((t - 0.68) / 0.06, 2));
-  value += 0.015 * Math.sin(Date.now() / 500);
-  value += rand(-0.015, 0.015);
+
+  if (isDoctorCriticalPhase()) {
+    value += 0.04 * Math.exp(-Math.pow((t - 0.15) / 0.05, 2));
+    value += -0.10 * Math.exp(-Math.pow((t - 0.34) / 0.020, 2));
+    value += 0.65 * Math.exp(-Math.pow((t - 0.39) / 0.018, 2));
+    value += -0.16 * Math.exp(-Math.pow((t - 0.46) / 0.022, 2));
+    value += 0.36 * Math.exp(-Math.pow((t - 0.64) / 0.11, 2));
+    value += 0.10;
+    value += 0.03 * Math.sin(Date.now() / 180);
+    value += rand(-0.03, 0.03);
+  } else {
+    value += 0.10 * Math.exp(-Math.pow((t - 0.18) / 0.035, 2));
+    value += -0.14 * Math.exp(-Math.pow((t - 0.36) / 0.012, 2));
+    value += 1.08 * Math.exp(-Math.pow((t - 0.40) / 0.008, 2));
+    value += -0.28 * Math.exp(-Math.pow((t - 0.43) / 0.014, 2));
+    value += 0.28 * Math.exp(-Math.pow((t - 0.68) / 0.06, 2));
+    value += 0.015 * Math.sin(Date.now() / 500);
+    value += rand(-0.015, 0.015);
+  }
 
   return Number(value.toFixed(3));
 }
@@ -828,6 +973,24 @@ function initSimulatedAi() {
 }
 
 function generateSimulatedAiRecord() {
+  updateDoctorSimScenario();
+
+  if (isDoctorCriticalPhase()) {
+    doctorSimulatedAi = {
+      id: doctorSimulatedAi.id + 1,
+      ai_class: "CRITICAL-MI",
+      risk_level: "critical",
+      risk_score: 0.99,
+      diagnosis: "Akut miyokard enfarktüsü / kritik kardiyak olay şüphesi",
+      model_name: "simulator_v1",
+      ai_comment: "Süregelen kritik anomali nedeniyle acil müdahale önerilir. Yüksek riskli kardiyak olay senaryosu algılandı.",
+      created_at: new Date().toISOString()
+    };
+    showEmergencyOverlay();
+    startEmergencyAlarm();
+    return;
+  }
+
   const scenarios = [
     {
       ai_class: "0-Normal",
@@ -886,6 +1049,17 @@ function renderDoctorAi(result) {
   set("docAiModel", result.model_name);
   set("docAiComment", result.ai_comment);
   set("docAiTime", formatDT(result.created_at));
+
+  const aiPanel = $("doctorAiCard");
+  if (aiPanel) {
+    if (String(result.risk_level).toLowerCase() === "critical") {
+      aiPanel.style.border = "2px solid rgba(255,80,80,.75)";
+      aiPanel.style.boxShadow = "0 0 0 1px rgba(255,80,80,.25), 0 20px 50px rgba(255,0,0,.15)";
+    } else {
+      aiPanel.style.border = "";
+      aiPanel.style.boxShadow = "";
+    }
+  }
 }
 
 async function loadDoctorAi() {
@@ -931,7 +1105,7 @@ function startDoctorAiAuto() {
 
       generateSimulatedAiRecord();
       renderDoctorAi(doctorSimulatedAi);
-    }, 5000);
+    }, LIVE_AI_MS);
     return;
   }
 
