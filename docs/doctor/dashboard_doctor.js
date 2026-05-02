@@ -11,9 +11,6 @@ let selectedPatient = null;
 let doctorChart = null;
 let doctorActiveChartKey = null;
 
-/* ===============================
-   CANLI GERÇEĞE BENZER EKG SİMÜLASYONU
-   =============================== */
 let doctorLiveEcgTimer = null;
 let doctorLiveVitalsTimer = null;
 let doctorLiveHr = 75;
@@ -21,9 +18,11 @@ let doctorLiveTemp = 0;
 let doctorLiveSeries = [];
 let doctorBeatTime = 0;
 
-const LIVE_ECG_POINTS = 220;   // ekranda görünen nokta sayısı
-const LIVE_ECG_DT = 0.04;      // 40 ms -> 25 fps
-const LIVE_VITALS_REFRESH_MS = 5000;
+// EKG daha yavaş ve daha geniş zaman penceresi
+const LIVE_ECG_POINTS = 320;
+const LIVE_ECG_DT = 0.06; // önce 0.04 idi, şimdi daha yavaş
+const LIVE_VITALS_REFRESH_MS = 4000;
+const DOCTOR_AUTO_REFRESH_MS = 4000;
 
 const doctorChartState = {
   ekg: {
@@ -32,7 +31,8 @@ const doctorChartState = {
     sliderId: "doctorEkgRange",
     infoId: "doctorEkgRangeInfo",
     filterDays: 1,
-    visibleSlice: []
+    visibleSlice: [],
+    autoRefreshTimer: null
   },
   hr: {
     points: [],
@@ -40,7 +40,8 @@ const doctorChartState = {
     sliderId: "doctorHrRange",
     infoId: "doctorHrRangeInfo",
     filterDays: 1,
-    visibleSlice: []
+    visibleSlice: [],
+    autoRefreshTimer: null
   },
   temp: {
     points: [],
@@ -48,7 +49,8 @@ const doctorChartState = {
     sliderId: "doctorTempRange",
     infoId: "doctorTempRangeInfo",
     filterDays: 1,
-    visibleSlice: []
+    visibleSlice: [],
+    autoRefreshTimer: null
   }
 };
 
@@ -158,6 +160,7 @@ window.onPatientChange = async function () {
   if (!val) {
     selectedPatient = null;
     stopDoctorLiveEcg();
+    stopAllDoctorAutoRefresh();
 
     if (menu) menu.classList.add("hidden");
     if (detailCard) detailCard.classList.add("hidden");
@@ -217,6 +220,8 @@ window.showSection = async function (id) {
     return;
   }
 
+  stopAllDoctorAutoRefresh();
+
   if (id !== "ekg") {
     stopDoctorLiveEcg();
   }
@@ -233,12 +238,18 @@ window.showSection = async function (id) {
   }
   if (id === "ekg") {
     await loadDoctorChart("ekg");
+    startDoctorAutoRefresh("ekg");
   }
   if (id === "hr") {
     await loadDoctorChart("hr");
+    startDoctorAutoRefresh("hr");
   }
   if (id === "temp") {
     await loadDoctorChart("temp");
+    startDoctorAutoRefresh("temp");
+  }
+  if (id === "ai") {
+    // AI için ileride ayrı canlı update eklenebilir
   }
 };
 
@@ -251,6 +262,7 @@ window.goHome = function () {
   if (back) back.classList.add("hidden");
 
   stopDoctorLiveEcg();
+  stopAllDoctorAutoRefresh();
 
   if (doctorChart) {
     doctorChart.destroy();
@@ -261,6 +273,7 @@ window.goHome = function () {
 
 window.logout = function (silent = false) {
   stopDoctorLiveEcg();
+  stopAllDoctorAutoRefresh();
   localStorage.removeItem("token");
   localStorage.removeItem("role");
   if (!silent) alert("Çıkış yapıldı");
@@ -300,8 +313,8 @@ async function loadPatientOverview() {
 
 /* ================= CHART ================= */
 function getDoctorAxisLimits(chartKey) {
-  if (chartKey === "temp") return { min: 35.5, max: 38.5, step: 0.5 };
-  if (chartKey === "hr") return { min: 40, max: 140, step: 10 };
+  if (chartKey === "temp") return { min: 0, max: 40, step: 5 };
+  if (chartKey === "hr") return { min: 40, max: 160, step: 10 };
   if (chartKey === "ekg") return { min: -0.5, max: 1.3, step: 0.2 };
   return {};
 }
@@ -344,8 +357,8 @@ function buildDoctorChart(chartKey) {
         backgroundColor: doctorColor(chartKey),
         borderWidth: 4,
         tension: chartKey === "ekg" ? 0.15 : 0.28,
-        pointRadius: 3,
-        pointHoverRadius: 6,
+        pointRadius: chartKey === "ekg" ? 0 : 3,
+        pointHoverRadius: chartKey === "ekg" ? 0 : 6,
         pointBackgroundColor: "#ffffff",
         pointBorderColor: doctorColor(chartKey),
         pointBorderWidth: 2,
@@ -451,7 +464,7 @@ function buildDoctorLiveEcgChart() {
           bodyColor: "#e7eaf3",
           callbacks: {
             title() {
-              return "Gerçeğe benzer canlı EKG simülasyonu";
+              return "Gerçeğe benzer canlı EKG";
             }
           }
         }
@@ -527,7 +540,8 @@ function updateDoctorSlider(chartKey) {
 }
 
 window.doctorGoLiveWindow = function (chartKey) {
-  if (chartKey === "ekg") {
+  if (chartKey === "ekg" && doctorChartState.ekg.filterDays === 1) {
+    startDoctorLiveEcg();
     const info = $("doctorEkgRangeInfo");
     if (info) info.textContent = "Canlı simülasyon aktif";
     return;
@@ -544,30 +558,27 @@ window.doctorGoLiveWindow = function (chartKey) {
 
 window.setDoctorFilter = async function (chartKey, days) {
   doctorChartState[chartKey].filterDays = days;
-
-  if (chartKey === "ekg") {
-    await startDoctorLiveEcg();
-    return;
-  }
-
   await loadDoctorChart(chartKey);
 };
 
 async function loadDoctorChart(chartKey) {
   if (!selectedPatient) return;
 
-  if (chartKey === "ekg") {
-    await startDoctorLiveEcg();
-    return;
-  }
-
-  stopDoctorLiveEcg();
-
   const kindMap = {
     ekg: "ecg",
     hr: "heart_rate",
     temp: "temperature"
   };
+
+  // Sadece EKG + 1 gün görünümünde canlı waveform aç
+  if (chartKey === "ekg" && doctorChartState.ekg.filterDays === 1) {
+    await startDoctorLiveEcg();
+    return;
+  }
+
+  if (chartKey === "ekg") {
+    stopDoctorLiveEcg();
+  }
 
   try {
     const days = doctorChartState[chartKey].filterDays;
@@ -594,7 +605,10 @@ async function loadDoctorChart(chartKey) {
 
     const maxStart = Math.max(0, doctorChartState[chartKey].points.length - doctorChartState[chartKey].windowSize);
     const slider = $(doctorChartState[chartKey].sliderId);
-    if (slider) slider.value = maxStart;
+    if (slider) {
+      slider.disabled = false;
+      slider.value = maxStart;
+    }
 
     renderDoctorWindow(chartKey, maxStart);
 
@@ -603,9 +617,32 @@ async function loadDoctorChart(chartKey) {
   }
 }
 
-/* ===============================
-   GERÇEĞE BENZER CANLI EKG ÜRETİMİ
-   =============================== */
+/* ================= AUTO REFRESH ================= */
+function stopDoctorAutoRefresh(chartKey) {
+  const state = doctorChartState[chartKey];
+  if (state && state.autoRefreshTimer) {
+    clearInterval(state.autoRefreshTimer);
+    state.autoRefreshTimer = null;
+  }
+}
+
+function stopAllDoctorAutoRefresh() {
+  ["ekg", "hr", "temp"].forEach(stopDoctorAutoRefresh);
+}
+
+function startDoctorAutoRefresh(chartKey) {
+  stopDoctorAutoRefresh(chartKey);
+
+  doctorChartState[chartKey].autoRefreshTimer = setInterval(async () => {
+    const page = $(chartKey);
+    if (!page || !page.classList.contains("active")) return;
+    if (!selectedPatient) return;
+
+    await loadDoctorChart(chartKey);
+  }, DOCTOR_AUTO_REFRESH_MS);
+}
+
+/* ================= GERÇEĞE BENZER CANLI EKG ================= */
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -616,21 +653,18 @@ function ecgGaussian(x, mu, sigma, amp) {
 
 function nextSyntheticEcgSample() {
   const hr = clamp(Number(doctorLiveHr) || 75, 45, 160);
-  const beatDuration = 60 / hr; // sn
-  const x = doctorBeatTime / beatDuration; // 0..1 arası
+  const beatDuration = 60 / hr;
+  const x = doctorBeatTime / beatDuration;
 
   let y = 0;
+  y += ecgGaussian(x, 0.18, 0.025, 0.10);   // P
+  y += ecgGaussian(x, 0.36, 0.010, -0.14);  // Q
+  y += ecgGaussian(x, 0.40, 0.006, 1.00);   // R
+  y += ecgGaussian(x, 0.44, 0.012, -0.26);  // S
+  y += ecgGaussian(x, 0.68, 0.055, 0.28);   // T
 
-  // P-QRS-T dalga modeli
-  y += ecgGaussian(x, 0.18, 0.025, 0.12);   // P
-  y += ecgGaussian(x, 0.36, 0.010, -0.16);  // Q
-  y += ecgGaussian(x, 0.40, 0.006, 1.05);   // R
-  y += ecgGaussian(x, 0.44, 0.012, -0.28);  // S
-  y += ecgGaussian(x, 0.68, 0.060, 0.30);   // T
-
-  // hafif baseline wander + noise
-  y += 0.015 * Math.sin(2 * Math.PI * x * 1.0);
-  y += (Math.random() - 0.5) * 0.02;
+  y += 0.012 * Math.sin(2 * Math.PI * x);
+  y += (Math.random() - 0.5) * 0.015;
 
   doctorBeatTime += LIVE_ECG_DT;
   if (doctorBeatTime >= beatDuration) {
@@ -643,7 +677,6 @@ function nextSyntheticEcgSample() {
 function seedDoctorLiveEcgSeries() {
   doctorLiveSeries = [];
   doctorBeatTime = 0;
-
   for (let i = 0; i < LIVE_ECG_POINTS; i++) {
     doctorLiveSeries.push(nextSyntheticEcgSample());
   }
@@ -653,8 +686,8 @@ function updateDoctorLiveEcgFrame() {
   if (!doctorChart || doctorActiveChartKey !== "ekg") return;
 
   const sample = nextSyntheticEcgSample();
-
   doctorLiveSeries.push(sample);
+
   if (doctorLiveSeries.length > LIVE_ECG_POINTS) {
     doctorLiveSeries.shift();
   }
@@ -719,6 +752,7 @@ async function startDoctorLiveEcg() {
     slider.max = 0;
     slider.value = 0;
   }
+
   if (info) {
     info.textContent = "Canlı simülasyon aktif";
   }
@@ -815,8 +849,8 @@ async function loadLatestCommentSafe() {
       return;
     }
 
-    box.textContent = data.comment.comment.comment ?? "Henüz yorum yok.";
-    time.textContent = `Tarih: ${formatDT(data.comment.comment.created_at)} | Doktor ID: ${data.comment.comment.doctor_id}`;
+    box.textContent = data.comment.comment ?? "Henüz yorum yok.";
+    time.textContent = `Tarih: ${formatDT(data.comment.created_at)} | Doktor ID: ${data.comment.doctor_id}`;
 
   } catch (e) {
     console.error("latest err:", e);
