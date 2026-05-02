@@ -8,7 +8,7 @@ if (!TOKEN) {
 
 const SIMULATED_PATIENT_ID = 3;
 const LIVE_AI_MS = 5000;
-const SIM_CRISIS_AFTER_MS = 75 * 1000; // 75 sn sonra kritik faz
+const SIM_CRISIS_AFTER_MS = 75 * 1000;
 
 let currentDoctor = null;
 let selectedPatient = null;
@@ -16,16 +16,17 @@ let doctorChart = null;
 let doctorActiveChartKey = null;
 let lastRealAiId = null;
 
+let doctorOverviewTimer = null;
 let doctorAlarmAudioCtx = null;
 let doctorAlarmTimer = null;
-let doctorAlarmSilenced = false;
-let doctorOverlayDismissed = false;
-let doctorOverviewTimer = null;
 
 let doctorAlarmMutedUntil = 0;
 let doctorOverlayHiddenUntil = 0;
 let doctorLastDesktopNotificationAt = 0;
-let doctorFallbackAlarm = null;
+let doctorLastCriticalState = false;
+
+let doctorAlertHistory = [];
+let doctorActiveAlertId = null;
 
 const doctorSimScenario = {
   sessionStartMs: null,
@@ -118,24 +119,28 @@ const doctorChartState = {
 
 document.addEventListener("DOMContentLoaded", async () => {
   goHome();
-  setHomeNoticeNormal();
+  updateHomeNoticeFromAlerts();
   bindDoctorRangeInputs();
-  ensureFallbackAlarm();
 
-  const unlockOnce = async () => {
-    await unlockAlarmAudio();
-    await ensureNotificationPermission();
-  };
-
-  document.addEventListener("click", unlockOnce, { once: true });
-  document.addEventListener("keydown", unlockOnce, { once: true });
+  document.addEventListener("click", unlockDoctorAlarmAudio, { once: true });
+  document.addEventListener("keydown", unlockDoctorAlarmAudio, { once: true });
 
   await loadMeDoctor();
   await loadPatients();
+  renderDoctorNoticeHistory();
+  updateHomeNoticeFromAlerts();
 });
+
+/* =========================
+   HELPERS
+   ========================= */
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function nowTs() {
+  return Date.now();
 }
 
 function isSimulatedPatient() {
@@ -175,18 +180,6 @@ function rand(min, max) {
   return Math.random() * (max - min) + min;
 }
 
-function nowMs() {
-  return Date.now();
-}
-
-function isAlarmMutedNow() {
-  return nowMs() < doctorAlarmMutedUntil;
-}
-
-function isOverlayHiddenNow() {
-  return nowMs() < doctorOverlayHiddenUntil;
-}
-
 function escapeHtml(str) {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -196,76 +189,191 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
-/* ================= HOME NOTICE ================= */
-function updateHomeNotice({
-  title = "Panel Hazır",
-  text = "Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.",
-  badge = "NORMAL",
-  badgeBg = "rgba(80,255,160,.12)",
-  badgeColor = "#89ffb8",
-  badgeBorder = "rgba(80,255,160,.22)"
-} = {}) {
+function isDoctorAlarmMuted() {
+  return nowTs() < doctorAlarmMutedUntil;
+}
+
+function isDoctorOverlayHidden() {
+  return nowTs() < doctorOverlayHiddenUntil;
+}
+
+/* =========================
+   HOME NOTICE
+   ========================= */
+
+function updateHomeNoticeFromAlerts() {
+  const badgeEl = $("homeNoticeBadge");
   const titleEl = $("homeNoticeTitle");
   const textEl = $("homeNoticeText");
-  const badgeEl = $("homeNoticeBadge");
   const timeEl = $("homeNoticeTime");
+  const cardEl = $("homeNoticeCard");
 
-  if (titleEl) titleEl.textContent = title;
-  if (textEl) textEl.textContent = text;
+  if (!badgeEl || !titleEl || !textEl || !timeEl || !cardEl) return;
 
-  if (badgeEl) {
-    badgeEl.textContent = badge;
-    badgeEl.style.background = badgeBg;
-    badgeEl.style.color = badgeColor;
-    badgeEl.style.borderColor = badgeBorder;
-  }
+  const active = getCurrentUnresolvedAlert();
+  const latest = doctorAlertHistory[0];
 
-  if (timeEl) {
-    timeEl.textContent = `Son güncelleme: ${new Date().toLocaleTimeString("tr-TR")}`;
-  }
-}
+  if (active) {
+    badgeEl.textContent = "KRİTİK";
+    badgeEl.style.background = "rgba(255,70,70,.18)";
+    badgeEl.style.color = "#ffb1b1";
+    badgeEl.style.borderColor = "rgba(255,90,90,.35)";
 
-function setHomeNoticeNormal() {
-  updateHomeNotice({
-    title: "Panel Hazır",
-    text: "Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.",
-    badge: "NORMAL",
-    badgeBg: "rgba(80,255,160,.12)",
-    badgeColor: "#89ffb8",
-    badgeBorder: "rgba(80,255,160,.22)"
-  });
-}
+    titleEl.textContent = "Kritik Alarm Aktif";
+    textEl.textContent = active.message + (isDoctorAlarmMuted()
+      ? " Alarm susturuldu, ancak kritik durum hâlâ devam ediyor."
+      : " Alarm aktif.");
+    timeEl.textContent = `Başlangıç: ${formatDT(active.createdAt)}`;
 
-function setHomeNoticePatientSelected() {
-  if (!selectedPatient) {
-    setHomeNoticeNormal();
+    cardEl.style.border = "1px solid rgba(255,90,90,.45)";
+    cardEl.style.boxShadow = "0 0 0 1px rgba(255,90,90,.12), 0 0 26px rgba(255,0,0,.14)";
     return;
   }
 
-  updateHomeNotice({
-    title: `${selectedPatient.username} aktif`,
-    text: isSimulatedPatient()
-      ? "Bu hasta için canlı simülasyon modu açık. Olası kritik durumlar ve AI teşhisi sistem tarafından dinamik olarak üretilecektir."
-      : "Bu hasta için gerçek backend verileri gösteriliyor. Güncel ölçümler ve AI analizi ilgili sayfalarda izlenebilir.",
-    badge: isSimulatedPatient() ? "SİMÜLASYON" : "GERÇEK VERİ",
-    badgeBg: isSimulatedPatient() ? "rgba(80,170,255,.14)" : "rgba(80,255,160,.12)",
-    badgeColor: isSimulatedPatient() ? "#8fc7ff" : "#89ffb8",
-    badgeBorder: isSimulatedPatient() ? "rgba(80,170,255,.25)" : "rgba(80,255,160,.22)"
-  });
+  if (latest) {
+    badgeEl.textContent = "GEÇMİŞ BİLDİRİM";
+    badgeEl.style.background = "rgba(255,255,255,.07)";
+    badgeEl.style.color = "#dbe3f8";
+    badgeEl.style.borderColor = "rgba(255,255,255,.12)";
+
+    titleEl.textContent = "Son Bildirim";
+    textEl.textContent = latest.message + " Durum şu anda normal.";
+    timeEl.textContent = `Son olay: ${formatDT(latest.createdAt)}`;
+
+    cardEl.style.border = "1px solid rgba(255,255,255,.08)";
+    cardEl.style.boxShadow = "none";
+    return;
+  }
+
+  badgeEl.textContent = "NORMAL";
+  badgeEl.style.background = "rgba(80,255,160,.12)";
+  badgeEl.style.color = "#89ffb8";
+  badgeEl.style.borderColor = "rgba(80,255,160,.22)";
+
+  titleEl.textContent = "Panel Hazır";
+  textEl.textContent = "Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.";
+  timeEl.textContent = `Son güncelleme: ${new Date().toLocaleTimeString("tr-TR")}`;
+
+  cardEl.style.border = "1px solid rgba(255,255,255,.08)";
+  cardEl.style.boxShadow = "none";
 }
 
-function setHomeNoticeCritical() {
-  updateHomeNotice({
-    title: "Kritik Alarm Aktif",
-    text: "Süregelen kritik kardiyak durum algılandı. Acil müdahale protokolü tetiklendi. Hasta durumu derhal değerlendirilmelidir.",
-    badge: "KRİTİK",
-    badgeBg: "rgba(255,80,80,.14)",
-    badgeColor: "#ff9d9d",
-    badgeBorder: "rgba(255,80,80,.30)"
-  });
+/* =========================
+   ALERT HISTORY
+   ========================= */
+
+function getCurrentUnresolvedAlert() {
+  return doctorAlertHistory.find(a => a.id === doctorActiveAlertId && a.active);
 }
 
-/* ================= NOTIFICATION + AUDIO ================= */
+function createDoctorAlert(message) {
+  const alert = {
+    id: Date.now(),
+    patientId: selectedPatient?.id ?? null,
+    patientName: selectedPatient?.username ?? "-",
+    message: message || "Kritik kardiyak durum algılandı.",
+    createdAt: new Date().toISOString(),
+    resolvedAt: null,
+    active: true
+  };
+
+  doctorAlertHistory.unshift(alert);
+  doctorActiveAlertId = alert.id;
+  renderDoctorNoticeHistory();
+  updateHomeNoticeFromAlerts();
+  return alert;
+}
+
+function resolveDoctorAlert() {
+  const active = getCurrentUnresolvedAlert();
+  if (!active) return;
+
+  active.active = false;
+  active.resolvedAt = new Date().toISOString();
+  doctorActiveAlertId = null;
+
+  renderDoctorNoticeHistory();
+  updateHomeNoticeFromAlerts();
+}
+
+window.deleteDoctorNotice = function (id) {
+  doctorAlertHistory = doctorAlertHistory.filter(a => a.id !== id);
+  if (doctorActiveAlertId === id) doctorActiveAlertId = null;
+  renderDoctorNoticeHistory();
+  updateHomeNoticeFromAlerts();
+};
+
+function renderDoctorNoticeHistory() {
+  const wrap = $("noticeHistoryList");
+  if (!wrap) return;
+
+  if (!doctorAlertHistory.length) {
+    wrap.innerHTML = `<div style="opacity:.7; font-size:14px;">Henüz bildirim yok.</div>`;
+    return;
+  }
+
+  wrap.innerHTML = doctorAlertHistory.map(item => {
+    const isActive = !!item.active;
+
+    const boxStyle = isActive
+      ? `
+        background: linear-gradient(180deg, rgba(120,0,0,.55), rgba(70,0,0,.42));
+        border:1px solid rgba(255,90,90,.65);
+        box-shadow: 0 0 0 1px rgba(255,90,90,.10), 0 0 24px rgba(255,0,0,.18);
+      `
+      : `
+        background: rgba(255,255,255,.04);
+        border:1px solid rgba(255,255,255,.08);
+        box-shadow:none;
+      `;
+
+    const badge = isActive
+      ? `<span style="padding:5px 10px;border-radius:999px;background:rgba(255,70,70,.18);border:1px solid rgba(255,90,90,.35);color:#ffb1b1;font-size:11px;font-weight:800;">AKTİF KRİTİK</span>`
+      : `<span style="padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:#d6dbea;font-size:11px;font-weight:800;">ÇÖZÜLDÜ</span>`;
+
+    return `
+      <div style="border-radius:18px;padding:14px;${boxStyle}">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px;">
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${badge}
+            <div style="font-size:15px;font-weight:800;color:#fff;">
+              ${escapeHtml(item.patientName)}
+            </div>
+          </div>
+
+          <button
+            onclick="deleteDoctorNotice(${item.id})"
+            style="
+              background:#1c2746;
+              color:#fff;
+              border:none;
+              border-radius:12px;
+              padding:8px 12px;
+              cursor:pointer;
+              font-weight:700;
+            "
+          >
+            Sil
+          </button>
+        </div>
+
+        <div style="font-size:14px; line-height:1.6; color:#edf0f8; margin-bottom:8px;">
+          ${escapeHtml(item.message)}
+        </div>
+
+        <div style="font-size:12px; color:#cdd4e5; line-height:1.6;">
+          Başlangıç: ${formatDT(item.createdAt)}
+          ${item.resolvedAt ? `<br>Çözülme: ${formatDT(item.resolvedAt)}` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+/* =========================
+   NOTIFICATION + SOUND
+   ========================= */
+
 async function ensureNotificationPermission() {
   if (!("Notification" in window)) return false;
 
@@ -284,7 +392,7 @@ async function showDesktopCriticalNotification() {
   const ok = await ensureNotificationPermission();
   if (!ok) return;
 
-  const now = nowMs();
+  const now = nowTs();
   if (now - doctorLastDesktopNotificationAt < 15000) return;
 
   doctorLastDesktopNotificationAt = now;
@@ -302,7 +410,7 @@ async function showDesktopCriticalNotification() {
   }
 }
 
-async function unlockAlarmAudio() {
+async function unlockDoctorAlarmAudio() {
   try {
     if (!doctorAlarmAudioCtx) {
       doctorAlarmAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -316,26 +424,110 @@ async function unlockAlarmAudio() {
   }
 }
 
-function ensureFallbackAlarm() {
-  if (doctorFallbackAlarm) return doctorFallbackAlarm;
+async function playDoctorSirenOnce() {
+  try {
+    await unlockDoctorAlarmAudio();
+    if (!doctorAlarmAudioCtx) return;
 
-  const audio = document.createElement("audio");
-  audio.preload = "auto";
-  audio.loop = false;
-  doctorFallbackAlarm = audio;
-  return doctorFallbackAlarm;
+    const ctx = doctorAlarmAudioCtx;
+    const t0 = ctx.currentTime;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.04);
+    gain.gain.setValueAtTime(0.22, t0 + 1.0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 1.18);
+    gain.connect(ctx.destination);
+
+    const oscA = ctx.createOscillator();
+    const oscB = ctx.createOscillator();
+
+    oscA.type = "sawtooth";
+    oscB.type = "triangle";
+
+    oscA.frequency.setValueAtTime(680, t0);
+    oscA.frequency.linearRampToValueAtTime(920, t0 + 0.45);
+    oscA.frequency.linearRampToValueAtTime(680, t0 + 0.90);
+
+    oscB.frequency.setValueAtTime(520, t0);
+    oscB.frequency.linearRampToValueAtTime(760, t0 + 0.45);
+    oscB.frequency.linearRampToValueAtTime(520, t0 + 0.90);
+
+    oscA.connect(gain);
+    oscB.connect(gain);
+
+    oscA.start(t0);
+    oscB.start(t0);
+    oscA.stop(t0 + 1.2);
+    oscB.stop(t0 + 1.2);
+  } catch (e) {
+    console.error("Alarm sesi hatası:", e);
+  }
 }
 
-/* ================= EMERGENCY ================= */
+async function startDoctorAlarm() {
+  if (doctorAlarmTimer) return;
+  if (isDoctorAlarmMuted()) return;
+
+  await playDoctorSirenOnce();
+
+  doctorAlarmTimer = setInterval(async () => {
+    if (isDoctorAlarmMuted()) return;
+    await playDoctorSirenOnce();
+  }, 1400);
+}
+
+function stopDoctorAlarm() {
+  if (doctorAlarmTimer) {
+    clearInterval(doctorAlarmTimer);
+    doctorAlarmTimer = null;
+  }
+}
+
+/* =========================
+   OVERLAY
+   ========================= */
+
+function fillEmergencyOverlayDetails() {
+  const details = $("emergencyOverlayDetails");
+  if (!details) return;
+
+  details.innerHTML = `
+    <strong>Hasta:</strong> ${escapeHtml(selectedPatient?.username || "-")}<br>
+    <strong>Durum:</strong> Süregelen kritik kardiyak olay senaryosu<br>
+    <strong>Eylem:</strong> Acil müdahale protokolü başlatılmalı
+  `;
+}
+
+function showEmergencyOverlay() {
+  if (isDoctorOverlayHidden()) return;
+
+  const overlay = $("emergencyOverlay");
+  if (!overlay) return;
+
+  fillEmergencyOverlayDetails();
+  overlay.style.display = "flex";
+}
+
+window.closeEmergencyOverlay = function () {
+  const overlay = $("emergencyOverlay");
+  if (overlay) overlay.style.display = "none";
+  doctorOverlayHiddenUntil = nowTs() + (10 * 60 * 1000);
+};
+
+window.silenceEmergencyAlarm = function () {
+  stopDoctorAlarm();
+  closeEmergencyOverlay();
+  doctorAlarmMutedUntil = nowTs() + (10 * 60 * 1000);
+};
+
+/* =========================
+   SIMULATION
+   ========================= */
+
 function resetDoctorSimScenario() {
   doctorSimScenario.sessionStartMs = Date.now();
   doctorSimScenario.crisisConfirmed = false;
-  doctorAlarmSilenced = false;
-  doctorOverlayDismissed = false;
-  doctorAlarmMutedUntil = 0;
-  doctorOverlayHiddenUntil = 0;
-  hideEmergencyOverlay(true);
-  silenceEmergencyAlarm(true);
 }
 
 function getDoctorSimElapsedMs() {
@@ -358,159 +550,80 @@ function isDoctorCriticalPhase() {
   return isSimulatedPatient() && doctorSimScenario.crisisConfirmed;
 }
 
-async function showEmergencyOverlay() {
-  if (doctorOverlayDismissed) return;
-  if (isOverlayHiddenNow()) return;
-  if (isAlarmMutedNow()) return;
+/* =========================
+   CRITICAL FLOW
+   ========================= */
 
-  const overlay = $("emergencyOverlay");
-  const details = $("emergencyOverlayDetails");
-  if (!overlay) return;
+function doctorHasCriticalCondition() {
+  if (!selectedPatient) return false;
 
-  overlay.style.display = "flex";
-
-  if (details) {
-    details.innerHTML = `
-      <strong>Hasta:</strong> ${escapeHtml(selectedPatient?.username || "-")}<br>
-      <strong>Durum:</strong> Süregelen kritik kardiyak olay senaryosu<br>
-      <strong>Eylem:</strong> Acil müdahale protokolü başlatılmalı
-    `;
+  if (isSimulatedPatient()) {
+    return isDoctorCriticalPhase();
   }
 
-  setHomeNoticeCritical();
-  await showDesktopCriticalNotification();
+  const hrText = $("docLastHr")?.textContent || "";
+  const tempText = $("docLastTemp")?.textContent || "";
+  const aiRisk = ($("docAiRisk")?.textContent || "").toLowerCase();
+  const aiClass = ($("docAiClass")?.textContent || "").toLowerCase();
+
+  const hr = parseFloat(hrText.replace(/[^\d.]/g, "")) || 0;
+  const temp = parseFloat(tempText.replace(",", ".").replace(/[^\d.]/g, "")) || 0;
+
+  if (aiRisk.includes("critical")) return true;
+  if (aiClass.includes("critical")) return true;
+  if (hr >= 130) return true;
+  if (temp >= 38.5) return true;
+
+  return false;
 }
 
-window.hideEmergencyOverlay = function (force = false) {
-  const overlay = $("emergencyOverlay");
-  if (overlay) overlay.style.display = "none";
+async function doctorHandleCriticalState() {
+  const isCritical = doctorHasCriticalCondition();
 
-  if (!force) {
-    doctorOverlayDismissed = true;
-    doctorOverlayHiddenUntil = nowMs() + 30 * 1000;
+  if (isCritical && !doctorLastCriticalState) {
+    doctorLastCriticalState = true;
+
+    createDoctorAlert("Süregelen kritik kardiyak durum algılandı. Acil müdahale protokolü tetiklenmelidir.");
+
+    showEmergencyOverlay();
+    await showDesktopCriticalNotification();
+    await startDoctorAlarm();
+    return;
   }
 
-  if (isDoctorCriticalPhase()) {
-    setHomeNoticeCritical();
-  } else if (selectedPatient) {
-    setHomeNoticePatientSelected();
-  } else {
-    setHomeNoticeNormal();
-  }
-};
+  if (isCritical && doctorLastCriticalState) {
+    updateHomeNoticeFromAlerts();
 
-async function beepEmergency() {
-  try {
-    await unlockAlarmAudio();
-
-    if (doctorAlarmAudioCtx && doctorAlarmAudioCtx.state !== "suspended") {
-      const ctx = doctorAlarmAudioCtx;
-      const start = ctx.currentTime;
-
-      const master = ctx.createGain();
-      master.gain.setValueAtTime(0.0001, start);
-      master.gain.exponentialRampToValueAtTime(0.22, start + 0.03);
-      master.gain.setValueAtTime(0.22, start + 0.75);
-      master.gain.exponentialRampToValueAtTime(0.0001, start + 0.98);
-      master.connect(ctx.destination);
-
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-
-      osc1.type = "sawtooth";
-      osc2.type = "triangle";
-
-      osc1.frequency.setValueAtTime(650, start);
-      osc1.frequency.linearRampToValueAtTime(920, start + 0.45);
-      osc1.frequency.linearRampToValueAtTime(650, start + 0.9);
-
-      osc2.frequency.setValueAtTime(500, start);
-      osc2.frequency.linearRampToValueAtTime(720, start + 0.45);
-      osc2.frequency.linearRampToValueAtTime(500, start + 0.9);
-
-      osc1.connect(master);
-      osc2.connect(master);
-
-      osc1.start(start);
-      osc2.start(start);
-      osc1.stop(start + 1.0);
-      osc2.stop(start + 1.0);
-      return;
+    if (!isDoctorAlarmMuted()) {
+      showEmergencyOverlay();
+      await startDoctorAlarm();
     }
 
-    const fallback = ensureFallbackAlarm();
-    fallback.currentTime = 0;
-  } catch (e) {
-    console.error("alarm beep error", e);
+    renderDoctorNoticeHistory();
+    return;
   }
+
+  if (!isCritical && doctorLastCriticalState) {
+    doctorLastCriticalState = false;
+    resolveDoctorAlert();
+    stopDoctorAlarm();
+
+    const overlay = $("emergencyOverlay");
+    if (overlay) overlay.style.display = "none";
+
+    renderDoctorNoticeHistory();
+    updateHomeNoticeFromAlerts();
+    return;
+  }
+
+  renderDoctorNoticeHistory();
+  updateHomeNoticeFromAlerts();
 }
 
-async function startEmergencyAlarm() {
-  if (doctorAlarmSilenced) return;
-  if (isAlarmMutedNow()) return;
-  if (doctorAlarmTimer) return;
+/* =========================
+   AUTH
+   ========================= */
 
-  await beepEmergency();
-
-  doctorAlarmTimer = setInterval(async () => {
-    if (doctorAlarmSilenced) return;
-    if (isAlarmMutedNow()) return;
-    await beepEmergency();
-  }, 1200);
-}
-
-window.silenceEmergencyAlarm = function (force = false) {
-  doctorAlarmSilenced = true;
-
-  if (!force) {
-    doctorAlarmMutedUntil = nowMs() + 10 * 60 * 1000;
-    doctorOverlayHiddenUntil = nowMs() + 10 * 60 * 1000;
-    doctorOverlayDismissed = false;
-  }
-
-  if (doctorAlarmTimer) {
-    clearInterval(doctorAlarmTimer);
-    doctorAlarmTimer = null;
-  }
-
-  if (doctorFallbackAlarm) {
-    try {
-      doctorFallbackAlarm.pause();
-      doctorFallbackAlarm.currentTime = 0;
-    } catch (e) {
-      console.error("fallback stop error", e);
-    }
-  }
-
-  const overlay = $("emergencyOverlay");
-  if (overlay) overlay.style.display = "none";
-
-  if (isDoctorCriticalPhase()) {
-    setHomeNoticeCritical();
-  }
-};
-
-/* ================= OVERVIEW LIVE ================= */
-function stopDoctorOverviewAuto() {
-  if (doctorOverviewTimer) {
-    clearInterval(doctorOverviewTimer);
-    doctorOverviewTimer = null;
-  }
-}
-
-function startDoctorOverviewAuto() {
-  stopDoctorOverviewAuto();
-
-  if (!selectedPatient) return;
-
-  doctorOverviewTimer = setInterval(async () => {
-    const overviewPage = $("overview");
-    if (!overviewPage || !overviewPage.classList.contains("active")) return;
-    await loadPatientOverview();
-  }, 1500);
-}
-
-/* ================= AUTH ================= */
 async function loadMeDoctor() {
   try {
     const res = await fetch(`${API_URL}/users/me`, {
@@ -576,8 +689,21 @@ window.onPatientChange = async function () {
   stopAllDoctorLiveModes(true);
   stopDoctorAiAuto();
   stopDoctorOverviewAuto();
+  stopDoctorAlarm();
 
   const val = select.value;
+
+  doctorAlertHistory = [];
+  doctorActiveAlertId = null;
+  doctorAlarmMutedUntil = 0;
+  doctorOverlayHiddenUntil = 0;
+  doctorLastCriticalState = false;
+
+  const overlay = $("emergencyOverlay");
+  if (overlay) overlay.style.display = "none";
+
+  renderDoctorNoticeHistory();
+  updateHomeNoticeFromAlerts();
 
   if (!val) {
     selectedPatient = null;
@@ -598,7 +724,6 @@ window.onPatientChange = async function () {
     doctorActiveChartKey = null;
 
     clearDoctorAiBox();
-    setHomeNoticeNormal();
     goHome();
     return;
   }
@@ -636,18 +761,19 @@ window.onPatientChange = async function () {
     doctorMode.ekg = "history";
     doctorMode.hr = "history";
     doctorMode.temp = "history";
-    hideEmergencyOverlay(true);
-    silenceEmergencyAlarm(true);
   }
 
   await loadLatestCommentSafe();
   await loadPatientOverview();
   await loadDoctorAi();
-  setHomeNoticePatientSelected();
+  updateHomeNoticeFromAlerts();
   goHome();
 };
 
-/* ================= PAGE ================= */
+/* =========================
+   PAGE
+   ========================= */
+
 function hideAllPages() {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
 }
@@ -695,22 +821,49 @@ window.goHome = function () {
     doctorChart.destroy();
     doctorChart = null;
   }
+
   doctorActiveChartKey = null;
   stopDoctorAiAuto();
   stopDoctorOverviewAuto();
+  updateHomeNoticeFromAlerts();
 };
 
 window.logout = function (silent = false) {
   stopAllDoctorLiveModes(true);
   stopDoctorAiAuto();
   stopDoctorOverviewAuto();
+  stopDoctorAlarm();
+
   localStorage.removeItem("token");
   localStorage.removeItem("role");
+
   if (!silent) alert("Çıkış yapıldı");
   window.location.href = "../index.html";
 };
 
-/* ================= OVERVIEW ================= */
+/* =========================
+   OVERVIEW
+   ========================= */
+
+function stopDoctorOverviewAuto() {
+  if (doctorOverviewTimer) {
+    clearInterval(doctorOverviewTimer);
+    doctorOverviewTimer = null;
+  }
+}
+
+function startDoctorOverviewAuto() {
+  stopDoctorOverviewAuto();
+
+  if (!selectedPatient) return;
+
+  doctorOverviewTimer = setInterval(async () => {
+    const overviewPage = $("overview");
+    if (!overviewPage || !overviewPage.classList.contains("active")) return;
+    await loadPatientOverview();
+  }, 1500);
+}
+
 async function loadPatientOverview() {
   if (!selectedPatient) return;
 
@@ -728,11 +881,6 @@ async function loadPatientOverview() {
     if (ekgEl) ekgEl.textContent = Number(ekgValue).toFixed(3);
     if (tempEl) tempEl.textContent = `${Number(tempValue).toFixed(2)} °C`;
     if (hrEl) hrEl.textContent = `${hrValue} BPM`;
-
-    if (isDoctorCriticalPhase()) {
-      await showEmergencyOverlay();
-      await startEmergencyAlarm();
-    }
 
     return;
   }
@@ -764,7 +912,10 @@ async function loadPatientOverview() {
   }
 }
 
-/* ================= CHART HELPERS ================= */
+/* =========================
+   CHART
+   ========================= */
+
 function getDoctorAxisLimits(chartKey) {
   if (chartKey === "temp") {
     if (isSimulatedPatient() && doctorMode[chartKey] === "live") {
@@ -913,7 +1064,6 @@ function bindDoctorRangeInputs() {
   });
 }
 
-/* ================= HISTORY MODE ================= */
 function renderDoctorWindow(chartKey, startIndex = 0) {
   const state = doctorChartState[chartKey];
   const endIndex = Math.min(startIndex + state.windowSize, state.points.length);
@@ -942,7 +1092,6 @@ function updateDoctorSlider(chartKey) {
   slider.disabled = false;
 }
 
-/* ================= LIVE MODE ================= */
 function ensureDoctorLiveSeed(chartKey) {
   if (doctorLiveData[chartKey].length) return;
 
@@ -1054,11 +1203,6 @@ function startDoctorLiveMode(chartKey) {
       if (chartKey === "ekg") appendDoctorLivePoint("ekg", generateDoctorLiveEkg());
       if (chartKey === "hr") appendDoctorLivePoint("hr", generateDoctorLiveHr());
       if (chartKey === "temp") appendDoctorLivePoint("temp", generateDoctorLiveTemp());
-
-      if (isDoctorCriticalPhase()) {
-        showEmergencyOverlay();
-        startEmergencyAlarm();
-      }
     }, intervalMs);
   }
 
@@ -1151,7 +1295,10 @@ async function loadDoctorChart(chartKey) {
   }
 }
 
-/* ================= LIVE DATA GENERATORS ================= */
+/* =========================
+   LIVE DATA GENERATORS
+   ========================= */
+
 function generateDoctorLiveHr() {
   updateDoctorSimScenario();
 
@@ -1229,7 +1376,10 @@ function generateDoctorLiveEkg() {
   return Number(value.toFixed(3));
 }
 
-/* ================= AI ================= */
+/* =========================
+   AI
+   ========================= */
+
 function clearDoctorAiBox() {
   ["docAiClass", "docAiRisk", "docAiScore", "docAiDiagnosis", "docAiModel", "docAiComment", "docAiTime"]
     .forEach(id => {
@@ -1247,7 +1397,7 @@ function initSimulatedAi() {
     diagnosis: "Normal ritim",
     model_name: "simulator_v1",
     ai_comment: "Mevcut kayıt normal ritim özellikleri göstermektedir.",
-    created_at: new Date().toISOString()
+    createdAt: new Date().toISOString()
   };
 }
 
@@ -1256,7 +1406,7 @@ function generateSimulatedAiRecord() {
 
   if (isDoctorCriticalPhase()) {
     doctorSimulatedAi = {
-      id: doctorSimulatedAi.id + 1,
+      id: Date.now(),
       ai_class: "CRITICAL-MI",
       risk_level: "critical",
       risk_score: 0.99,
@@ -1265,14 +1415,12 @@ function generateSimulatedAiRecord() {
       ai_comment: "Süregelen kritik anomali nedeniyle acil müdahale önerilir. Yüksek riskli kardiyak olay senaryosu algılandı.",
       created_at: new Date().toISOString()
     };
-    showEmergencyOverlay();
-    startEmergencyAlarm();
     return;
   }
 
   if (isSimAbnormalVitalsNow()) {
     doctorSimulatedAi = {
-      id: doctorSimulatedAi.id + 1,
+      id: Date.now(),
       ai_class: "HIGH-RISK-CARDIAC",
       risk_level: "high",
       risk_score: 0.90,
@@ -1284,42 +1432,14 @@ function generateSimulatedAiRecord() {
     return;
   }
 
-  const scenarios = [
-    {
-      ai_class: "0-Normal",
-      risk_level: "low",
-      risk_score: 0.10,
-      diagnosis: "Normal ritim",
-      ai_comment: "Mevcut kayıt normal ritim özellikleri göstermektedir."
-    },
-    {
-      ai_class: "2-V (VEB/PVC)",
-      risk_level: "high",
-      risk_score: 0.84,
-      diagnosis: "Ventriküler anomali / PVC şüphesi",
-      ai_comment: "Ventriküler kaynaklı erken atım ile uyumlu bir patern saptandı."
-    },
-    {
-      ai_class: "4-Q (Signal quality low)",
-      risk_level: "medium",
-      risk_score: 0.32,
-      diagnosis: "Sinyal kalitesi düşük",
-      ai_comment: "Sinyal kalitesi düşük olduğu için güvenilir sınıflandırma yapılamadı."
-    },
-    {
-      ai_class: "1-S",
-      risk_level: "medium",
-      risk_score: 0.58,
-      diagnosis: "Supraventriküler anomali şüphesi",
-      ai_comment: "Supraventriküler kökenli ritim bozukluğu ile uyumlu bulgular gözlendi."
-    }
-  ];
-
-  const pick = scenarios[Math.floor(Math.random() * scenarios.length)];
   doctorSimulatedAi = {
-    id: doctorSimulatedAi.id + 1,
-    ...pick,
+    id: Date.now(),
+    ai_class: "0-Normal",
+    risk_level: "low",
+    risk_score: 0.10,
+    diagnosis: "Normal ritim",
     model_name: "simulator_v1",
+    ai_comment: "Mevcut kayıt normal ritim özellikleri göstermektedir.",
     created_at: new Date().toISOString()
   };
 }
@@ -1363,6 +1483,7 @@ async function loadDoctorAi() {
   if (!selectedPatient) return;
 
   if (isSimulatedPatient()) {
+    generateSimulatedAiRecord();
     renderDoctorAi(doctorSimulatedAi);
     return;
   }
@@ -1420,7 +1541,10 @@ function stopDoctorAiAuto() {
   }
 }
 
-/* ================= COMMENTS ================= */
+/* =========================
+   COMMENTS
+   ========================= */
+
 window.saveComment = async function () {
   if (!selectedPatient) {
     alert("Önce hasta seçmelisin.");
@@ -1584,3 +1708,11 @@ window.deleteComment = async function (commentId) {
     alert("Sunucuya bağlanılamadı");
   }
 };
+
+/* =========================
+   PERIODIC CHECK
+   ========================= */
+
+setInterval(() => {
+  doctorHandleCriticalState();
+}, 1000);

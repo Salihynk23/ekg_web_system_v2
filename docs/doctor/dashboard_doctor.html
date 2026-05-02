@@ -57,14 +57,14 @@
     <section id="home" class="page active">
       <div class="center-screen" style="align-items:stretch;">
         <div style="
-          width:min(980px, 100%);
+          width:min(1080px, 100%);
           display:grid;
-          grid-template-columns: 1.2fr .8fr;
+          grid-template-columns: 1.05fr .95fr;
           gap:18px;
           align-items:stretch;
         ">
           <div class="patient-card" style="
-            min-height:260px;
+            min-height:420px;
             display:flex;
             align-items:center;
             justify-content:center;
@@ -78,69 +78,43 @@
             </div>
           </div>
 
-          <div id="homeNoticeCard" class="patient-card" style="
-            min-height:260px;
-            display:flex;
-            flex-direction:column;
-            justify-content:space-between;
-            border:1px solid rgba(255,255,255,.08);
-          ">
-            <div>
-              <div style="
-                font-size:13px;
-                letter-spacing:.08em;
-                text-transform:uppercase;
-                color:var(--muted);
-                margin-bottom:8px;
-                font-weight:700;
-              ">
-                Sistem Bildirimi
-              </div>
-
-              <div id="homeNoticeTitle" style="
-                font-size:28px;
-                font-weight:900;
-                line-height:1.15;
-                margin-bottom:12px;
-              ">
-                Panel Hazır
-              </div>
-
-              <div id="homeNoticeText" style="
-                font-size:16px;
-                line-height:1.7;
-                color:#dce4ff;
-              ">
-                Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.
-              </div>
-            </div>
-
-            <div style="
-              display:flex;
-              align-items:center;
-              justify-content:space-between;
-              gap:12px;
-              margin-top:18px;
-              flex-wrap:wrap;
-            ">
-              <div id="homeNoticeBadge" style="
-                background:rgba(80,255,160,.12);
+          <div class="patient-card" id="homeNoticeCard" style="min-height: 420px;">
+            <div
+              id="homeNoticeBadge"
+              style="
+                display:inline-block;
+                padding:8px 14px;
+                border-radius:999px;
+                font-size:12px;
+                font-weight:800;
+                letter-spacing:1px;
+                background: rgba(80,255,160,.12);
                 color:#89ffb8;
                 border:1px solid rgba(80,255,160,.22);
-                border-radius:999px;
-                padding:8px 12px;
-                font-size:13px;
-                font-weight:800;
-              ">
-                NORMAL
-              </div>
+                margin-bottom:14px;
+              "
+            >
+              NORMAL
+            </div>
 
-              <div id="homeNoticeTime" style="
-                color:var(--muted);
-                font-size:13px;
-              ">
-                Güncelleme bekleniyor
-              </div>
+            <div id="homeNoticeTitle" style="font-size:22px; font-weight:900; margin-bottom:10px;">
+              Panel Hazır
+            </div>
+
+            <div id="homeNoticeText" style="font-size:16px; line-height:1.7; color:var(--muted); margin-bottom:18px;">
+              Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.
+            </div>
+
+            <div id="homeNoticeTime" style="font-size:13px; color:var(--muted); margin-bottom:18px;">
+              Son güncelleme: -
+            </div>
+
+            <div style="font-size:15px; font-weight:800; margin-bottom:12px;">
+              Geçmiş Bildirimler
+            </div>
+
+            <div id="noticeHistoryList" style="display:flex; flex-direction:column; gap:12px;">
+              <div style="opacity:.7; font-size:14px;">Henüz bildirim yok.</div>
             </div>
           </div>
         </div>
@@ -322,7 +296,7 @@
   justify-content:center;
   padding:24px;
 ">
-  <div style="
+  <div class="overlay-card" style="
     width:min(760px, 100%);
     background:linear-gradient(180deg, rgba(35,8,8,.98), rgba(18,6,6,.98));
     border:2px solid rgba(255,80,80,.55);
@@ -331,53 +305,36 @@
     padding:28px;
     color:#fff;
   ">
-    <div style="font-size:14px; font-weight:800; letter-spacing:.18em; color:#ff8f8f; margin-bottom:10px;">
+    <div style="font-size:14px; letter-spacing:2px; font-weight:800; color:#ff9f9f; margin-bottom:10px;">
       ACİL DURUM SİMÜLASYONU
     </div>
 
-    <div style="font-size:34px; font-weight:900; line-height:1.1; color:#fff; margin-bottom:12px;">
+    <div style="font-size:30px; font-weight:900; margin-bottom:18px;">
       KRİTİK UYARI
     </div>
 
-    <div style="font-size:18px; line-height:1.6; color:#ffdada; margin-bottom:18px;">
+    <div style="font-size:16px; line-height:1.8; color:#f3dede; margin-bottom:18px;">
       Hasta için süregelen kritik kardiyak durum algılandı. Acil müdahale protokolü tetiklenmelidir.
     </div>
 
-    <div id="emergencyOverlayDetails" style="
-      background:rgba(255,255,255,.06);
-      border:1px solid rgba(255,255,255,.08);
-      border-radius:16px;
-      padding:16px;
-      margin-bottom:18px;
-      font-size:15px;
-      line-height:1.7;
-      color:#fff;
-    ">
-      Kritik durum tespit edildi.
-    </div>
+    <div
+      id="emergencyOverlayDetails"
+      style="
+        background: rgba(255,255,255,.06);
+        border:1px solid rgba(255,255,255,.08);
+        border-radius:18px;
+        padding:18px;
+        margin-bottom:18px;
+        line-height:1.8;
+      "
+    ></div>
 
     <div style="display:flex; gap:12px; flex-wrap:wrap;">
-      <button onclick="silenceEmergencyAlarm()" style="
-        border:none;
-        background:#ffb300;
-        color:#111;
-        font-weight:800;
-        border-radius:14px;
-        padding:12px 18px;
-        cursor:pointer;
-      ">
+      <button class="menu-btn" style="background:#ffbf00; color:#111;" onclick="silenceEmergencyAlarm()">
         Alarmı Sustur
       </button>
 
-      <button onclick="hideEmergencyOverlay()" style="
-        border:none;
-        background:#2a324f;
-        color:#fff;
-        font-weight:700;
-        border-radius:14px;
-        padding:12px 18px;
-        cursor:pointer;
-      ">
+      <button class="menu-btn" onclick="closeEmergencyOverlay()">
         Pencereyi Kapat
       </button>
     </div>
