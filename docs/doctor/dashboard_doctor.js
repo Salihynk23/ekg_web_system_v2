@@ -12,7 +12,6 @@ let currentDoctor = null;
 let selectedPatient = null;
 let doctorChart = null;
 let doctorActiveChartKey = null;
-
 let lastRealAiId = null;
 
 /* ================= LIVE TIMERS ================= */
@@ -142,10 +141,6 @@ function formatShortDT(dtStr) {
     minute: "2-digit",
     second: "2-digit"
   });
-}
-
-function nowIso() {
-  return new Date().toISOString();
 }
 
 function clamp(v, min, max) {
@@ -535,8 +530,6 @@ function bindDoctorRangeInputs() {
 /* ================= HISTORY MODE ================= */
 function renderDoctorWindow(chartKey, startIndex = 0) {
   const state = doctorChartState[chartKey];
-  if (!state) return;
-
   const endIndex = Math.min(startIndex + state.windowSize, state.points.length);
   const slice = state.points.slice(startIndex, endIndex);
   state.visibleSlice = slice;
@@ -549,9 +542,7 @@ function renderDoctorWindow(chartKey, startIndex = 0) {
   }
 
   const info = $(state.infoId);
-  if (info) {
-    info.textContent = slice.length ? `${startIndex + 1}-${endIndex} / ${state.points.length}` : "Veri yok";
-  }
+  if (info) info.textContent = slice.length ? `${startIndex + 1}-${endIndex} / ${state.points.length}` : "Veri yok";
 }
 
 function updateDoctorSlider(chartKey) {
@@ -697,7 +688,6 @@ function stopDoctorLiveMode(chartKey, clearData = false) {
   }
 
   doctorPausedByUser[chartKey] = false;
-
   if (clearData) doctorLiveData[chartKey] = [];
 }
 
@@ -740,19 +730,13 @@ async function loadDoctorChart(chartKey) {
 
   stopDoctorLiveMode(chartKey, false);
 
-  const kindMap = {
-    ekg: "ecg",
-    hr: "heart_rate",
-    temp: "temperature"
-  };
+  const kindMap = { ekg: "ecg", hr: "heart_rate", temp: "temperature" };
 
   try {
     const days = doctorChartState[chartKey].filterDays;
     const res = await fetch(
       `${API_URL}/measurements/patient/${selectedPatient.id}/${kindMap[chartKey]}?limit=500&days=${days}`,
-      {
-        headers: { Authorization: `Bearer ${TOKEN}` }
-      }
+      { headers: { Authorization: `Bearer ${TOKEN}` } }
     );
 
     doctorChartState[chartKey].points = res.ok ? await res.json() : [];
@@ -930,7 +914,6 @@ async function loadDoctorAi() {
       lastRealAiId = currentId;
       renderDoctorAi(data.result);
     }
-
   } catch (e) {
     console.error("AI load error:", e);
     clearDoctorAiBox();
@@ -945,9 +928,10 @@ function startDoctorAiAuto() {
     doctorLiveTimers.ai = setInterval(() => {
       const aiPage = $("ai");
       if (!aiPage || !aiPage.classList.contains("active")) return;
+
       generateSimulatedAiRecord();
       renderDoctorAi(doctorSimulatedAi);
-    }, LIVE_AI_MS);
+    }, 5000);
     return;
   }
 
