@@ -8,8 +8,10 @@ if (!TOKEN) {
 
 const SIMULATED_PATIENT_ID = 3;
 const LIVE_AI_MS = 5000;
-const SIM_CRISIS_AFTER_MS = 3 * 60 * 1000;
-const SIM_CRISIS_CONFIRM_MS = 10 * 1000;
+
+// Kritik durum daha hızlı görülsün diye süreyi biraz kısa tuttum.
+// Bu süreden sonra kritik faz başlar ve alarm ANINDA gelir.
+const SIM_CRISIS_AFTER_MS = 75 * 1000;
 
 let currentDoctor = null;
 let selectedPatient = null;
@@ -19,14 +21,14 @@ let lastRealAiId = null;
 
 let doctorAlarmAudioCtx = null;
 let doctorAlarmTimer = null;
+let doctorAlarmSilenced = false;
+let doctorOverviewTimer = null;
 
 const doctorSimScenario = {
   sessionStartMs: null,
-  crisisStartedAtMs: null,
   crisisConfirmed: false
 };
 
-/* ================= LIVE TIMERS ================= */
 let doctorLiveTimers = {
   ekg: null,
   hr: null,
@@ -34,7 +36,6 @@ let doctorLiveTimers = {
   ai: null
 };
 
-/* ================= LIVE DATA ================= */
 const doctorLiveData = {
   ekg: [],
   hr: [],
@@ -62,7 +63,6 @@ const doctorLiveGenerator = {
   }
 };
 
-/* ================= SIMULATED AI ================= */
 let doctorSimulatedAi = {
   id: 0,
   ai_class: "0-Normal",
@@ -74,7 +74,6 @@ let doctorSimulatedAi = {
   created_at: new Date().toISOString()
 };
 
-/* ================= MODES ================= */
 const doctorMode = {
   ekg: "history",
   hr: "history",
@@ -87,7 +86,6 @@ const doctorPausedByUser = {
   temp: false
 };
 
-/* ================= CHART STATE ================= */
 const doctorChartState = {
   ekg: {
     points: [],
@@ -117,6 +115,7 @@ const doctorChartState = {
 
 document.addEventListener("DOMContentLoaded", async () => {
   goHome();
+  setHomeNoticeNormal();
   bindDoctorRangeInputs();
   await loadMeDoctor();
   await loadPatients();
@@ -172,11 +171,80 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
+/* ================= HOME NOTICE ================= */
+function updateHomeNotice({
+  title = "Panel Hazır",
+  text = "Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.",
+  badge = "NORMAL",
+  badgeBg = "rgba(80,255,160,.12)",
+  badgeColor = "#89ffb8",
+  badgeBorder = "rgba(80,255,160,.22)"
+} = {}) {
+  const titleEl = $("homeNoticeTitle");
+  const textEl = $("homeNoticeText");
+  const badgeEl = $("homeNoticeBadge");
+  const timeEl = $("homeNoticeTime");
+
+  if (titleEl) titleEl.textContent = title;
+  if (textEl) textEl.textContent = text;
+
+  if (badgeEl) {
+    badgeEl.textContent = badge;
+    badgeEl.style.background = badgeBg;
+    badgeEl.style.color = badgeColor;
+    badgeEl.style.borderColor = badgeBorder;
+  }
+
+  if (timeEl) {
+    timeEl.textContent = `Son güncelleme: ${new Date().toLocaleTimeString("tr-TR")}`;
+  }
+}
+
+function setHomeNoticeNormal() {
+  updateHomeNotice({
+    title: "Panel Hazır",
+    text: "Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.",
+    badge: "NORMAL",
+    badgeBg: "rgba(80,255,160,.12)",
+    badgeColor: "#89ffb8",
+    badgeBorder: "rgba(80,255,160,.22)"
+  });
+}
+
+function setHomeNoticePatientSelected() {
+  if (!selectedPatient) {
+    setHomeNoticeNormal();
+    return;
+  }
+
+  updateHomeNotice({
+    title: `${selectedPatient.username} aktif`,
+    text: isSimulatedPatient()
+      ? "Bu hasta için canlı simülasyon modu açık. Olası kritik durumlar ve AI teşhisi sistem tarafından dinamik olarak üretilecektir."
+      : "Bu hasta için gerçek backend verileri gösteriliyor. Güncel ölçümler ve AI analizi ilgili sayfalarda izlenebilir.",
+    badge: isSimulatedPatient() ? "SİMÜLASYON" : "GERÇEK VERİ",
+    badgeBg: isSimulatedPatient() ? "rgba(80,170,255,.14)" : "rgba(80,255,160,.12)",
+    badgeColor: isSimulatedPatient() ? "#8fc7ff" : "#89ffb8",
+    badgeBorder: isSimulatedPatient() ? "rgba(80,170,255,.25)" : "rgba(80,255,160,.22)"
+  });
+}
+
+function setHomeNoticeCritical() {
+  updateHomeNotice({
+    title: "Kritik Alarm Aktif",
+    text: "Süregelen kritik kardiyak durum algılandı. Acil müdahale protokolü tetiklendi. Hasta durumu derhal değerlendirilmelidir.",
+    badge: "KRİTİK",
+    badgeBg: "rgba(255,80,80,.14)",
+    badgeColor: "#ff9d9d",
+    badgeBorder: "rgba(255,80,80,.30)"
+  });
+}
+
 /* ================= EMERGENCY ================= */
 function resetDoctorSimScenario() {
   doctorSimScenario.sessionStartMs = Date.now();
-  doctorSimScenario.crisisStartedAtMs = null;
   doctorSimScenario.crisisConfirmed = false;
+  doctorAlarmSilenced = false;
   hideEmergencyOverlay();
   silenceEmergencyAlarm();
 }
@@ -186,20 +254,18 @@ function getDoctorSimElapsedMs() {
   return Date.now() - doctorSimScenario.sessionStartMs;
 }
 
+function isSimAbnormalVitalsNow() {
+  if (!isSimulatedPatient()) return false;
+  return getDoctorSimElapsedMs() >= SIM_CRISIS_AFTER_MS;
+}
+
 function updateDoctorSimScenario() {
   if (!isSimulatedPatient()) return;
 
-  const elapsed = getDoctorSimElapsedMs();
-
-  if (elapsed >= SIM_CRISIS_AFTER_MS) {
-    if (!doctorSimScenario.crisisStartedAtMs) {
-      doctorSimScenario.crisisStartedAtMs = Date.now();
-    }
-
-    const duration = Date.now() - doctorSimScenario.crisisStartedAtMs;
-    if (duration >= SIM_CRISIS_CONFIRM_MS) {
-      doctorSimScenario.crisisConfirmed = true;
-    }
+  if (isSimAbnormalVitalsNow()) {
+    doctorSimScenario.crisisConfirmed = true;
+  } else {
+    doctorSimScenario.crisisConfirmed = false;
   }
 }
 
@@ -222,11 +288,21 @@ function showEmergencyOverlay() {
       <strong>Eylem:</strong> Acil müdahale protokolü başlatılmalı
     `;
   }
+
+  setHomeNoticeCritical();
 }
 
 window.hideEmergencyOverlay = function () {
   const overlay = $("emergencyOverlay");
   if (overlay) overlay.style.display = "none";
+
+  if (isDoctorCriticalPhase()) {
+    setHomeNoticeCritical();
+  } else if (selectedPatient) {
+    setHomeNoticePatientSelected();
+  } else {
+    setHomeNoticeNormal();
+  }
 };
 
 function beepEmergency() {
@@ -236,37 +312,80 @@ function beepEmergency() {
     }
 
     const ctx = doctorAlarmAudioCtx;
-    const osc = ctx.createOscillator();
+    const start = ctx.currentTime;
+
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    osc.type = "sawtooth";
-    osc.frequency.value = 880;
+    osc1.type = "sawtooth";
+    osc2.type = "triangle";
 
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.24);
+    osc1.frequency.setValueAtTime(620, start);
+    osc1.frequency.linearRampToValueAtTime(880, start + 0.45);
+    osc1.frequency.linearRampToValueAtTime(620, start + 0.9);
 
-    osc.connect(gain);
+    osc2.frequency.setValueAtTime(480, start);
+    osc2.frequency.linearRampToValueAtTime(700, start + 0.45);
+    osc2.frequency.linearRampToValueAtTime(480, start + 0.9);
+
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.16, start + 0.03);
+    gain.gain.setValueAtTime(0.16, start + 0.75);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.95);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
     gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.26);
+
+    osc1.start(start);
+    osc2.start(start);
+    osc1.stop(start + 1.0);
+    osc2.stop(start + 1.0);
   } catch (e) {
     console.error("alarm beep error", e);
   }
 }
 
 function startEmergencyAlarm() {
+  if (doctorAlarmSilenced) return;
   if (doctorAlarmTimer) return;
+
   beepEmergency();
-  doctorAlarmTimer = setInterval(beepEmergency, 1000);
+  doctorAlarmTimer = setInterval(() => {
+    if (doctorAlarmSilenced) return;
+    beepEmergency();
+  }, 1000);
 }
 
 window.silenceEmergencyAlarm = function () {
+  doctorAlarmSilenced = true;
+
   if (doctorAlarmTimer) {
     clearInterval(doctorAlarmTimer);
     doctorAlarmTimer = null;
   }
 };
+
+/* ================= OVERVIEW LIVE ================= */
+function stopDoctorOverviewAuto() {
+  if (doctorOverviewTimer) {
+    clearInterval(doctorOverviewTimer);
+    doctorOverviewTimer = null;
+  }
+}
+
+function startDoctorOverviewAuto() {
+  stopDoctorOverviewAuto();
+
+  if (!selectedPatient) return;
+
+  doctorOverviewTimer = setInterval(async () => {
+    const overviewPage = $("overview");
+    if (!overviewPage || !overviewPage.classList.contains("active")) return;
+    await loadPatientOverview();
+  }, 1500);
+}
 
 /* ================= AUTH ================= */
 async function loadMeDoctor() {
@@ -333,6 +452,7 @@ window.onPatientChange = async function () {
 
   stopAllDoctorLiveModes(true);
   stopDoctorAiAuto();
+  stopDoctorOverviewAuto();
 
   const val = select.value;
 
@@ -355,6 +475,7 @@ window.onPatientChange = async function () {
     doctorActiveChartKey = null;
 
     clearDoctorAiBox();
+    setHomeNoticeNormal();
     goHome();
     return;
   }
@@ -399,6 +520,7 @@ window.onPatientChange = async function () {
   await loadLatestCommentSafe();
   await loadPatientOverview();
   await loadDoctorAi();
+  setHomeNoticePatientSelected();
   goHome();
 };
 
@@ -420,7 +542,12 @@ window.showSection = async function (id) {
   const back = $("backBtn");
   if (back) back.classList.remove("hidden");
 
-  if (id === "overview") await loadPatientOverview();
+  stopDoctorOverviewAuto();
+
+  if (id === "overview") {
+    await loadPatientOverview();
+    startDoctorOverviewAuto();
+  }
   if (id === "ekg") await loadDoctorChart("ekg");
   if (id === "hr") await loadDoctorChart("hr");
   if (id === "temp") await loadDoctorChart("temp");
@@ -447,11 +574,13 @@ window.goHome = function () {
   }
   doctorActiveChartKey = null;
   stopDoctorAiAuto();
+  stopDoctorOverviewAuto();
 };
 
 window.logout = function (silent = false) {
   stopAllDoctorLiveModes(true);
   stopDoctorAiAuto();
+  stopDoctorOverviewAuto();
   localStorage.removeItem("token");
   localStorage.removeItem("role");
   if (!silent) alert("Çıkış yapıldı");
@@ -461,6 +590,29 @@ window.logout = function (silent = false) {
 /* ================= OVERVIEW ================= */
 async function loadPatientOverview() {
   if (!selectedPatient) return;
+
+  if (isSimulatedPatient()) {
+    updateDoctorSimScenario();
+
+    const ekgEl = $("docLastEcg");
+    const tempEl = $("docLastTemp");
+    const hrEl = $("docLastHr");
+
+    const ekgValue = generateDoctorLiveEkg();
+    const hrValue = generateDoctorLiveHr();
+    const tempValue = generateDoctorLiveTemp();
+
+    if (ekgEl) ekgEl.textContent = Number(ekgValue).toFixed(3);
+    if (tempEl) tempEl.textContent = `${Number(tempValue).toFixed(2)} °C`;
+    if (hrEl) hrEl.textContent = `${hrValue} BPM`;
+
+    if (isDoctorCriticalPhase()) {
+      showEmergencyOverlay();
+      startEmergencyAlarm();
+    }
+
+    return;
+  }
 
   try {
     const res = await fetch(`${API_URL}/measurements/patient/${selectedPatient.id}/latest`, {
@@ -779,6 +931,11 @@ function startDoctorLiveMode(chartKey) {
       if (chartKey === "ekg") appendDoctorLivePoint("ekg", generateDoctorLiveEkg());
       if (chartKey === "hr") appendDoctorLivePoint("hr", generateDoctorLiveHr());
       if (chartKey === "temp") appendDoctorLivePoint("temp", generateDoctorLiveTemp());
+
+      if (isDoctorCriticalPhase()) {
+        showEmergencyOverlay();
+        startEmergencyAlarm();
+      }
     }, intervalMs);
   }
 
@@ -877,7 +1034,7 @@ function generateDoctorLiveHr() {
 
   const s = doctorLiveGenerator.hr;
 
-  if (isDoctorCriticalPhase()) {
+  if (isSimAbnormalVitalsNow()) {
     const target = 138 + 14 * Math.sin(Date.now() / 2200) + rand(-6, 6);
     s.value += (target - s.value) * 0.24 + rand(-4, 4);
     s.value = clamp(s.value, 118, 168);
@@ -899,7 +1056,7 @@ function generateDoctorLiveTemp() {
 
   const s = doctorLiveGenerator.temp;
 
-  if (isDoctorCriticalPhase()) {
+  if (isSimAbnormalVitalsNow()) {
     const target = 37.15 + 0.06 * Math.sin(Date.now() / 9000);
     s.value += (target - s.value) * 0.10 + rand(-0.01, 0.01);
     s.value = clamp(s.value, 36.95, 37.35);
@@ -925,10 +1082,9 @@ function generateDoctorLiveEkg() {
   while (s.phase >= 1) s.phase -= 1;
 
   const t = s.phase;
-
   let value = 0;
 
-  if (isDoctorCriticalPhase()) {
+  if (isSimAbnormalVitalsNow()) {
     value += 0.04 * Math.exp(-Math.pow((t - 0.15) / 0.05, 2));
     value += -0.10 * Math.exp(-Math.pow((t - 0.34) / 0.020, 2));
     value += 0.65 * Math.exp(-Math.pow((t - 0.39) / 0.018, 2));
@@ -988,6 +1144,20 @@ function generateSimulatedAiRecord() {
     };
     showEmergencyOverlay();
     startEmergencyAlarm();
+    return;
+  }
+
+  if (isSimAbnormalVitalsNow()) {
+    doctorSimulatedAi = {
+      id: doctorSimulatedAi.id + 1,
+      ai_class: "HIGH-RISK-CARDIAC",
+      risk_level: "high",
+      risk_score: 0.90,
+      diagnosis: "Süregelen yüksek riskli kardiyak durum",
+      model_name: "simulator_v1",
+      ai_comment: "Anormal vitaller ve EKG örüntüsü izleniyor. Durum kritikleştiğinde acil alarm tetiklenecektir.",
+      created_at: new Date().toISOString()
+    };
     return;
   }
 
@@ -1052,9 +1222,13 @@ function renderDoctorAi(result) {
 
   const aiPanel = $("doctorAiCard");
   if (aiPanel) {
-    if (String(result.risk_level).toLowerCase() === "critical") {
+    const level = String(result.risk_level).toLowerCase();
+    if (level === "critical") {
       aiPanel.style.border = "2px solid rgba(255,80,80,.75)";
       aiPanel.style.boxShadow = "0 0 0 1px rgba(255,80,80,.25), 0 20px 50px rgba(255,0,0,.15)";
+    } else if (level === "high") {
+      aiPanel.style.border = "2px solid rgba(255,180,80,.55)";
+      aiPanel.style.boxShadow = "0 0 0 1px rgba(255,180,80,.18), 0 20px 50px rgba(255,180,0,.10)";
     } else {
       aiPanel.style.border = "";
       aiPanel.style.boxShadow = "";
