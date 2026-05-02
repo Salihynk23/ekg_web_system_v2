@@ -231,6 +231,38 @@ function saveCurrentPatientStore() {
   store.simulatedAi = doctorSimulatedAi;
 }
 
+function collectAllDoctorAlerts() {
+  const all = [];
+
+  Object.entries(doctorPatientStore).forEach(([patientId, store]) => {
+    const alerts = Array.isArray(store.alertHistory) ? store.alertHistory : [];
+    alerts.forEach(alert => {
+      all.push({
+        ...alert,
+        _storePatientId: Number(patientId)
+      });
+    });
+  });
+
+  all.sort((a, b) => {
+    const ta = new Date(a.createdAt || 0).getTime();
+    const tb = new Date(b.createdAt || 0).getTime();
+    return tb - ta;
+  });
+
+  return all;
+}
+
+function getGlobalActiveAlert() {
+  const all = collectAllDoctorAlerts();
+  return all.find(a => a.active) || null;
+}
+
+function getGlobalLatestAlert() {
+  const all = collectAllDoctorAlerts();
+  return all.length ? all[0] : null;
+}
+
 /* =========================
    INIT
    ========================= */
@@ -328,8 +360,8 @@ function updateHomeNoticeFromAlerts() {
 
   if (!badgeEl || !titleEl || !textEl || !timeEl || !cardEl) return;
 
-  const active = getCurrentUnresolvedAlert();
-  const latest = doctorAlertHistory[0];
+  const active = getGlobalActiveAlert();
+  const latest = getGlobalLatestAlert();
 
   if (active) {
     badgeEl.textContent = "KRİTİK";
@@ -337,10 +369,13 @@ function updateHomeNoticeFromAlerts() {
     badgeEl.style.color = "#ffb1b1";
     badgeEl.style.borderColor = "rgba(255,90,90,.35)";
 
-    titleEl.textContent = "Kritik Alarm Aktif";
-    textEl.textContent = active.message + (isDoctorAlarmMuted()
-      ? " Alarm susturuldu, ancak kritik durum hâlâ devam ediyor."
-      : " Alarm aktif.");
+    titleEl.textContent = `Kritik Alarm Aktif - ${active.patientName}`;
+    textEl.textContent =
+      `${active.patientName} için ${active.message}` +
+      (nowTs() < (doctorPatientStore[active._storePatientId]?.alarmMutedUntil || 0)
+        ? " Alarm susturuldu, ancak kritik durum hâlâ devam ediyor."
+        : " Alarm aktif.");
+
     timeEl.textContent = `Başlangıç: ${formatDT(active.createdAt)}`;
 
     cardEl.style.border = "1px solid rgba(255,90,90,.45)";
@@ -354,8 +389,8 @@ function updateHomeNoticeFromAlerts() {
     badgeEl.style.color = "#dbe3f8";
     badgeEl.style.borderColor = "rgba(255,255,255,.12)";
 
-    titleEl.textContent = "Son Bildirim";
-    textEl.textContent = latest.message + " Durum şu anda normal.";
+    titleEl.textContent = `Son Bildirim - ${latest.patientName}`;
+    textEl.textContent = `${latest.patientName} için ${latest.message} Durum şu anda normal.`;
     timeEl.textContent = `Son olay: ${formatDT(latest.createdAt)}`;
 
     cardEl.style.border = "1px solid rgba(255,255,255,.08)";
@@ -416,24 +451,35 @@ function resolveDoctorAlert() {
   saveCurrentPatientStore();
 }
 
-window.deleteDoctorNotice = function (id) {
-  doctorAlertHistory = doctorAlertHistory.filter(a => a.id !== id);
-  if (doctorActiveAlertId === id) doctorActiveAlertId = null;
+window.deleteDoctorNoticeFromStore = function (patientId, alertId) {
+  const store = ensurePatientStore(patientId);
+
+  store.alertHistory = (store.alertHistory || []).filter(a => a.id !== alertId);
+
+  if (store.activeAlertId === alertId) {
+    store.activeAlertId = null;
+  }
+
+  if (selectedPatient && Number(selectedPatient.id) === Number(patientId)) {
+    bindPatientStore(selectedPatient.id);
+  }
+
   renderDoctorNoticeHistory();
   updateHomeNoticeFromAlerts();
-  saveCurrentPatientStore();
 };
 
 function renderDoctorNoticeHistory() {
   const wrap = $("noticeHistoryList");
   if (!wrap) return;
 
-  if (!doctorAlertHistory.length) {
+  const allAlerts = collectAllDoctorAlerts();
+
+  if (!allAlerts.length) {
     wrap.innerHTML = `<div style="opacity:.7; font-size:14px;">Henüz bildirim yok.</div>`;
     return;
   }
 
-  wrap.innerHTML = doctorAlertHistory.map(item => {
+  wrap.innerHTML = allAlerts.map(item => {
     const isActive = !!item.active;
 
     const boxStyle = isActive
@@ -463,7 +509,7 @@ function renderDoctorNoticeHistory() {
           </div>
 
           <button
-            onclick="deleteDoctorNotice(${item.id})"
+            onclick="deleteDoctorNoticeFromStore(${item._storePatientId}, ${item.id})"
             style="
               background:#1c2746;
               color:#fff;
@@ -516,11 +562,14 @@ async function showDesktopCriticalNotification() {
   const now = nowTs();
   if (now - doctorLastDesktopNotificationAt < 15000) return;
 
+  const active = getGlobalActiveAlert();
+  const patientName = active?.patientName || selectedPatient?.username || "-";
+
   doctorLastDesktopNotificationAt = now;
 
   try {
     new Notification("Kritik Uyarı - EKG Sistemi", {
-      body: `Hasta ${selectedPatient?.username || "-"} için kritik kardiyak durum algılandı.`,
+      body: `Hasta ${patientName} için kritik kardiyak durum algılandı.`,
       icon: "/favicon.ico",
       tag: "ekg-critical-alert",
       renotify: true,
@@ -545,7 +594,6 @@ async function unlockDoctorAlarmAudio() {
   }
 }
 
-/* Hastane monitörü acil alarmı - daha temiz */
 async function playDoctorSirenOnce() {
   try {
     await unlockDoctorAlarmAudio();
@@ -641,8 +689,11 @@ function fillEmergencyOverlayDetails() {
   const details = $("emergencyOverlayDetails");
   if (!details) return;
 
+  const active = getGlobalActiveAlert();
+  const patientName = active?.patientName || selectedPatient?.username || "-";
+
   details.innerHTML = `
-    <strong>Hasta:</strong> ${escapeHtml(selectedPatient?.username || "-")}<br>
+    <strong>Hasta:</strong> ${escapeHtml(patientName)}<br>
     <strong>Durum:</strong> Süregelen kritik kardiyak olay senaryosu<br>
     <strong>Eylem:</strong> Acil müdahale protokolü başlatılmalı
   `;
