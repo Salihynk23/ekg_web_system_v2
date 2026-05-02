@@ -8,9 +8,6 @@ if (!TOKEN) {
 
 const SIMULATED_PATIENT_ID = 3;
 const LIVE_AI_MS = 5000;
-
-// Kritik durum daha hızlı görülsün diye süreyi biraz kısa tuttum.
-// Bu süreden sonra kritik faz başlar ve alarm ANINDA gelir.
 const SIM_CRISIS_AFTER_MS = 75 * 1000;
 
 let currentDoctor = null;
@@ -22,6 +19,7 @@ let lastRealAiId = null;
 let doctorAlarmAudioCtx = null;
 let doctorAlarmTimer = null;
 let doctorAlarmSilenced = false;
+let doctorOverlayDismissed = false;
 let doctorOverviewTimer = null;
 
 const doctorSimScenario = {
@@ -245,7 +243,8 @@ function resetDoctorSimScenario() {
   doctorSimScenario.sessionStartMs = Date.now();
   doctorSimScenario.crisisConfirmed = false;
   doctorAlarmSilenced = false;
-  hideEmergencyOverlay();
+  doctorOverlayDismissed = false;
+  hideEmergencyOverlay(true);
   silenceEmergencyAlarm();
 }
 
@@ -261,12 +260,7 @@ function isSimAbnormalVitalsNow() {
 
 function updateDoctorSimScenario() {
   if (!isSimulatedPatient()) return;
-
-  if (isSimAbnormalVitalsNow()) {
-    doctorSimScenario.crisisConfirmed = true;
-  } else {
-    doctorSimScenario.crisisConfirmed = false;
-  }
+  doctorSimScenario.crisisConfirmed = isSimAbnormalVitalsNow();
 }
 
 function isDoctorCriticalPhase() {
@@ -275,6 +269,8 @@ function isDoctorCriticalPhase() {
 }
 
 function showEmergencyOverlay() {
+  if (doctorOverlayDismissed) return;
+
   const overlay = $("emergencyOverlay");
   const details = $("emergencyOverlayDetails");
   if (!overlay) return;
@@ -292,9 +288,13 @@ function showEmergencyOverlay() {
   setHomeNoticeCritical();
 }
 
-window.hideEmergencyOverlay = function () {
+window.hideEmergencyOverlay = function (force = false) {
   const overlay = $("emergencyOverlay");
   if (overlay) overlay.style.display = "none";
+
+  if (!force) {
+    doctorOverlayDismissed = true;
+  }
 
   if (isDoctorCriticalPhase()) {
     setHomeNoticeCritical();
@@ -305,10 +305,14 @@ window.hideEmergencyOverlay = function () {
   }
 };
 
-function beepEmergency() {
+async function beepEmergency() {
   try {
     if (!doctorAlarmAudioCtx) {
       doctorAlarmAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    if (doctorAlarmAudioCtx.state === "suspended") {
+      await doctorAlarmAudioCtx.resume();
     }
 
     const ctx = doctorAlarmAudioCtx;
@@ -330,8 +334,8 @@ function beepEmergency() {
     osc2.frequency.linearRampToValueAtTime(480, start + 0.9);
 
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.16, start + 0.03);
-    gain.gain.setValueAtTime(0.16, start + 0.75);
+    gain.gain.exponentialRampToValueAtTime(0.18, start + 0.03);
+    gain.gain.setValueAtTime(0.18, start + 0.75);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.95);
 
     osc1.connect(gain);
@@ -347,11 +351,12 @@ function beepEmergency() {
   }
 }
 
-function startEmergencyAlarm() {
+async function startEmergencyAlarm() {
   if (doctorAlarmSilenced) return;
   if (doctorAlarmTimer) return;
 
-  beepEmergency();
+  await beepEmergency();
+
   doctorAlarmTimer = setInterval(() => {
     if (doctorAlarmSilenced) return;
     beepEmergency();
@@ -513,7 +518,7 @@ window.onPatientChange = async function () {
     doctorMode.ekg = "history";
     doctorMode.hr = "history";
     doctorMode.temp = "history";
-    hideEmergencyOverlay();
+    hideEmergencyOverlay(true);
     silenceEmergencyAlarm();
   }
 
@@ -1155,7 +1160,7 @@ function generateSimulatedAiRecord() {
       risk_score: 0.90,
       diagnosis: "Süregelen yüksek riskli kardiyak durum",
       model_name: "simulator_v1",
-      ai_comment: "Anormal vitaller ve EKG örüntüsü izleniyor. Durum kritikleştiğinde acil alarm tetiklenecektir.",
+      ai_comment: "Anormal vitaller ve EKG örüntüsü izleniyor. Kritik olay riski çok yüksektir.",
       created_at: new Date().toISOString()
     };
     return;
