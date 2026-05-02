@@ -8,7 +8,7 @@ if (!TOKEN) {
 
 const SIMULATED_PATIENT_ID = 3;
 const LIVE_AI_MS = 5000;
-const SIM_CRISIS_AFTER_MS = 75 * 1000; // 75 sn sonra kritik faz başlasın
+const SIM_CRISIS_AFTER_MS = 75 * 1000; // 75 sn sonra kritik faz
 
 let currentDoctor = null;
 let selectedPatient = null;
@@ -25,6 +25,7 @@ let doctorOverviewTimer = null;
 let doctorAlarmMutedUntil = 0;
 let doctorOverlayHiddenUntil = 0;
 let doctorLastDesktopNotificationAt = 0;
+let doctorFallbackAlarm = null;
 
 const doctorSimScenario = {
   sessionStartMs: null,
@@ -119,9 +120,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   goHome();
   setHomeNoticeNormal();
   bindDoctorRangeInputs();
+  ensureFallbackAlarm();
 
-  document.addEventListener("click", unlockAlarmAudio, { once: true });
-  document.addEventListener("keydown", unlockAlarmAudio, { once: true });
+  const unlockOnce = async () => {
+    await unlockAlarmAudio();
+    await ensureNotificationPermission();
+  };
+
+  document.addEventListener("click", unlockOnce, { once: true });
+  document.addEventListener("keydown", unlockOnce, { once: true });
 
   await loadMeDoctor();
   await loadPatients();
@@ -309,6 +316,16 @@ async function unlockAlarmAudio() {
   }
 }
 
+function ensureFallbackAlarm() {
+  if (doctorFallbackAlarm) return doctorFallbackAlarm;
+
+  const audio = document.createElement("audio");
+  audio.preload = "auto";
+  audio.loop = false;
+  doctorFallbackAlarm = audio;
+  return doctorFallbackAlarm;
+}
+
 /* ================= EMERGENCY ================= */
 function resetDoctorSimScenario() {
   doctorSimScenario.sessionStartMs = Date.now();
@@ -386,38 +403,43 @@ async function beepEmergency() {
   try {
     await unlockAlarmAudio();
 
-    if (!doctorAlarmAudioCtx) return;
-    const ctx = doctorAlarmAudioCtx;
-    const start = ctx.currentTime;
+    if (doctorAlarmAudioCtx && doctorAlarmAudioCtx.state !== "suspended") {
+      const ctx = doctorAlarmAudioCtx;
+      const start = ctx.currentTime;
 
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const gain = ctx.createGain();
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.0001, start);
+      master.gain.exponentialRampToValueAtTime(0.22, start + 0.03);
+      master.gain.setValueAtTime(0.22, start + 0.75);
+      master.gain.exponentialRampToValueAtTime(0.0001, start + 0.98);
+      master.connect(ctx.destination);
 
-    osc1.type = "sawtooth";
-    osc2.type = "triangle";
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
 
-    osc1.frequency.setValueAtTime(620, start);
-    osc1.frequency.linearRampToValueAtTime(880, start + 0.45);
-    osc1.frequency.linearRampToValueAtTime(620, start + 0.9);
+      osc1.type = "sawtooth";
+      osc2.type = "triangle";
 
-    osc2.frequency.setValueAtTime(480, start);
-    osc2.frequency.linearRampToValueAtTime(700, start + 0.45);
-    osc2.frequency.linearRampToValueAtTime(480, start + 0.9);
+      osc1.frequency.setValueAtTime(650, start);
+      osc1.frequency.linearRampToValueAtTime(920, start + 0.45);
+      osc1.frequency.linearRampToValueAtTime(650, start + 0.9);
 
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.20, start + 0.03);
-    gain.gain.setValueAtTime(0.20, start + 0.75);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.95);
+      osc2.frequency.setValueAtTime(500, start);
+      osc2.frequency.linearRampToValueAtTime(720, start + 0.45);
+      osc2.frequency.linearRampToValueAtTime(500, start + 0.9);
 
-    osc1.connect(gain);
-    osc2.connect(gain);
-    gain.connect(ctx.destination);
+      osc1.connect(master);
+      osc2.connect(master);
 
-    osc1.start(start);
-    osc2.start(start);
-    osc1.stop(start + 1.0);
-    osc2.stop(start + 1.0);
+      osc1.start(start);
+      osc2.start(start);
+      osc1.stop(start + 1.0);
+      osc2.stop(start + 1.0);
+      return;
+    }
+
+    const fallback = ensureFallbackAlarm();
+    fallback.currentTime = 0;
   } catch (e) {
     console.error("alarm beep error", e);
   }
@@ -430,11 +452,11 @@ async function startEmergencyAlarm() {
 
   await beepEmergency();
 
-  doctorAlarmTimer = setInterval(() => {
+  doctorAlarmTimer = setInterval(async () => {
     if (doctorAlarmSilenced) return;
     if (isAlarmMutedNow()) return;
-    beepEmergency();
-  }, 1000);
+    await beepEmergency();
+  }, 1200);
 }
 
 window.silenceEmergencyAlarm = function (force = false) {
@@ -449,6 +471,15 @@ window.silenceEmergencyAlarm = function (force = false) {
   if (doctorAlarmTimer) {
     clearInterval(doctorAlarmTimer);
     doctorAlarmTimer = null;
+  }
+
+  if (doctorFallbackAlarm) {
+    try {
+      doctorFallbackAlarm.pause();
+      doctorFallbackAlarm.currentTime = 0;
+    } catch (e) {
+      console.error("fallback stop error", e);
+    }
   }
 
   const overlay = $("emergencyOverlay");
