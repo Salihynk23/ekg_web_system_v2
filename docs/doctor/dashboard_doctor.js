@@ -33,7 +33,7 @@ let doctorPausedByUser = {
 };
 
 let doctorMode = {
-  ekg: "live",   // live | history
+  ekg: "live",
   hr: "live",
   temp: "live"
 };
@@ -354,8 +354,8 @@ async function loadPatientOverview() {
 
 /* ================= CHART HELPERS ================= */
 function getDoctorAxisLimits(chartKey) {
-  if (chartKey === "temp") return { min: 36.0, max: 37.5, step: 0.2 };
-  if (chartKey === "hr") return { min: 40, max: 160, step: 10 };
+  if (chartKey === "temp") return { min: 36.45, max: 36.75, step: 0.05 };
+  if (chartKey === "hr") return { min: 60, max: 115, step: 5 };
   if (chartKey === "ekg") return { min: -0.5, max: 1.3, step: 0.2 };
   return {};
 }
@@ -678,7 +678,7 @@ async function fetchDoctorLiveVitals() {
     const hrEl = $("docLastHr");
 
     if (ekgEl) ekgEl.textContent = Number(data.ecg_value).toFixed(3);
-    if (tempEl) tempEl.textContent = `${Number(incomingTemp).toFixed(2)} °C`;
+    if (tempEl) tempEl.textContent = `${Number(data.temperature).toFixed(2)} °C`;
     if (hrEl) hrEl.textContent = `${data.heart_rate} BPM`;
 
   } catch (e) {
