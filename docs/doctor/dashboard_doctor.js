@@ -13,21 +13,26 @@ let doctorActiveChartKey = null;
 
 let doctorLiveEcgTimer = null;
 let doctorLiveVitalsTimer = null;
+
 let doctorLiveHr = 75;
 let doctorLiveTemp = 0;
+
+// Canlı EKG buffer'ı
 let doctorLiveSeries = [];
 let doctorBeatTime = 0;
 
-// EKG daha yavaş ve daha geniş zaman penceresi
+// kullanıcı geçmişe gittiyse ekran donsun
+let doctorEkgPausedByUser = false;
+
 const LIVE_ECG_POINTS = 320;
-const LIVE_ECG_DT = 0.06; // önce 0.04 idi, şimdi daha yavaş
+const LIVE_ECG_DT = 0.06;
 const LIVE_VITALS_REFRESH_MS = 4000;
 const DOCTOR_AUTO_REFRESH_MS = 4000;
 
 const doctorChartState = {
   ekg: {
     points: [],
-    windowSize: 60,
+    windowSize: LIVE_ECG_POINTS,
     sliderId: "doctorEkgRange",
     infoId: "doctorEkgRangeInfo",
     filterDays: 1,
@@ -205,7 +210,6 @@ window.onPatientChange = async function () {
 
   if ($("doctorText")) $("doctorText").value = "";
 
-  await loadLatestCommentSafe();
   await loadPatientOverview();
   goHome();
 };
@@ -247,9 +251,6 @@ window.showSection = async function (id) {
   if (id === "temp") {
     await loadDoctorChart("temp");
     startDoctorAutoRefresh("temp");
-  }
-  if (id === "ai") {
-    // AI için ileride ayrı canlı update eklenebilir
   }
 };
 
@@ -503,6 +504,20 @@ function bindDoctorRangeInputs() {
     if (!slider) return;
 
     slider.addEventListener("input", () => {
+      if (key === "ekg" && doctorChartState.ekg.filterDays === 1) {
+        const maxStart = Math.max(0, doctorLiveSeries.length - doctorChartState.ekg.windowSize);
+        const currentValue = Number(slider.value);
+
+        if (currentValue < maxStart) {
+          doctorEkgPausedByUser = true;
+        } else {
+          doctorEkgPausedByUser = false;
+        }
+
+        renderDoctorLiveWindow(currentValue);
+        return;
+      }
+
       renderDoctorWindow(key, Number(slider.value));
     });
   });
@@ -529,6 +544,28 @@ function renderDoctorWindow(chartKey, startIndex = 0) {
   }
 }
 
+function renderDoctorLiveWindow(startIndex = 0) {
+  const state = doctorChartState.ekg;
+  const endIndex = Math.min(startIndex + state.windowSize, doctorLiveSeries.length);
+  const slice = doctorLiveSeries.slice(startIndex, endIndex);
+
+  if (doctorChart && doctorActiveChartKey === "ekg") {
+    doctorChart.data.labels = new Array(slice.length).fill("");
+    doctorChart.data.datasets[0].data = slice;
+    doctorChart.update("none");
+  }
+
+  const info = $(state.infoId);
+  if (info) {
+    const maxStart = Math.max(0, doctorLiveSeries.length - state.windowSize);
+    if (doctorEkgPausedByUser) {
+      info.textContent = `Geçmiş görünüm: ${startIndex + 1}-${endIndex} / ${doctorLiveSeries.length}`;
+    } else {
+      info.textContent = "Canlı simülasyon aktif";
+    }
+  }
+}
+
 function updateDoctorSlider(chartKey) {
   const state = doctorChartState[chartKey];
   const slider = $(state.sliderId);
@@ -539,11 +576,27 @@ function updateDoctorSlider(chartKey) {
   if (Number(slider.value) > maxStart) slider.value = maxStart;
 }
 
+function updateDoctorLiveSlider() {
+  const slider = $("doctorEkgRange");
+  if (!slider) return;
+
+  const state = doctorChartState.ekg;
+  const maxStart = Math.max(0, doctorLiveSeries.length - state.windowSize);
+
+  slider.min = 0;
+  slider.max = maxStart;
+
+  if (!doctorEkgPausedByUser) {
+    slider.value = maxStart;
+  }
+}
+
 window.doctorGoLiveWindow = function (chartKey) {
   if (chartKey === "ekg" && doctorChartState.ekg.filterDays === 1) {
-    startDoctorLiveEcg();
-    const info = $("doctorEkgRangeInfo");
-    if (info) info.textContent = "Canlı simülasyon aktif";
+    doctorEkgPausedByUser = false;
+    updateDoctorLiveSlider();
+    const slider = $("doctorEkgRange");
+    renderDoctorLiveWindow(Number(slider.value));
     return;
   }
 
@@ -570,7 +623,6 @@ async function loadDoctorChart(chartKey) {
     temp: "temperature"
   };
 
-  // Sadece EKG + 1 gün görünümünde canlı waveform aç
   if (chartKey === "ekg" && doctorChartState.ekg.filterDays === 1) {
     await startDoctorLiveEcg();
     return;
@@ -638,6 +690,10 @@ function startDoctorAutoRefresh(chartKey) {
     if (!page || !page.classList.contains("active")) return;
     if (!selectedPatient) return;
 
+    if (chartKey === "ekg" && doctorChartState.ekg.filterDays === 1) {
+      return;
+    }
+
     await loadDoctorChart(chartKey);
   }, DOCTOR_AUTO_REFRESH_MS);
 }
@@ -657,11 +713,11 @@ function nextSyntheticEcgSample() {
   const x = doctorBeatTime / beatDuration;
 
   let y = 0;
-  y += ecgGaussian(x, 0.18, 0.025, 0.10);   // P
-  y += ecgGaussian(x, 0.36, 0.010, -0.14);  // Q
-  y += ecgGaussian(x, 0.40, 0.006, 1.00);   // R
-  y += ecgGaussian(x, 0.44, 0.012, -0.26);  // S
-  y += ecgGaussian(x, 0.68, 0.055, 0.28);   // T
+  y += ecgGaussian(x, 0.18, 0.025, 0.10);
+  y += ecgGaussian(x, 0.36, 0.010, -0.14);
+  y += ecgGaussian(x, 0.40, 0.006, 1.00);
+  y += ecgGaussian(x, 0.44, 0.012, -0.26);
+  y += ecgGaussian(x, 0.68, 0.055, 0.28);
 
   y += 0.012 * Math.sin(2 * Math.PI * x);
   y += (Math.random() - 0.5) * 0.015;
@@ -677,7 +733,9 @@ function nextSyntheticEcgSample() {
 function seedDoctorLiveEcgSeries() {
   doctorLiveSeries = [];
   doctorBeatTime = 0;
-  for (let i = 0; i < LIVE_ECG_POINTS; i++) {
+
+  // başlangıçta daha uzun buffer üretelim
+  for (let i = 0; i < 1200; i++) {
     doctorLiveSeries.push(nextSyntheticEcgSample());
   }
 }
@@ -688,13 +746,19 @@ function updateDoctorLiveEcgFrame() {
   const sample = nextSyntheticEcgSample();
   doctorLiveSeries.push(sample);
 
-  if (doctorLiveSeries.length > LIVE_ECG_POINTS) {
+  // buffer çok büyümesin ama geçmiş biriksin
+  if (doctorLiveSeries.length > 3000) {
     doctorLiveSeries.shift();
   }
 
-  doctorChart.data.labels = new Array(doctorLiveSeries.length).fill("");
-  doctorChart.data.datasets[0].data = doctorLiveSeries;
-  doctorChart.update("none");
+  updateDoctorLiveSlider();
+
+  const slider = $("doctorEkgRange");
+  if (!slider) return;
+
+  if (!doctorEkgPausedByUser) {
+    renderDoctorLiveWindow(Number(slider.value));
+  }
 }
 
 async function fetchDoctorLiveVitals() {
@@ -736,6 +800,8 @@ function stopDoctorLiveEcg() {
     doctorLiveVitalsTimer = null;
   }
 
+  doctorEkgPausedByUser = false;
+
   const slider = $("doctorEkgRange");
   if (slider) slider.disabled = false;
 }
@@ -747,11 +813,10 @@ async function startDoctorLiveEcg() {
   const info = $("doctorEkgRangeInfo");
 
   if (slider) {
-    slider.disabled = true;
-    slider.min = 0;
-    slider.max = 0;
-    slider.value = 0;
+    slider.disabled = false;
   }
+
+  doctorEkgPausedByUser = false;
 
   if (info) {
     info.textContent = "Canlı simülasyon aktif";
@@ -767,10 +832,12 @@ async function startDoctorLiveEcg() {
 
   await fetchDoctorLiveVitals();
   seedDoctorLiveEcgSeries();
+  updateDoctorLiveSlider();
 
-  doctorChart.data.labels = new Array(doctorLiveSeries.length).fill("");
-  doctorChart.data.datasets[0].data = doctorLiveSeries;
-  doctorChart.update("none");
+  const liveSlider = $("doctorEkgRange");
+  if (liveSlider) {
+    renderDoctorLiveWindow(Number(liveSlider.value));
+  }
 
   doctorLiveEcgTimer = setInterval(updateDoctorLiveEcgFrame, LIVE_ECG_DT * 1000);
   doctorLiveVitalsTimer = setInterval(fetchDoctorLiveVitals, LIVE_VITALS_REFRESH_MS);
@@ -808,137 +875,10 @@ window.saveComment = async function () {
     }
 
     if (textEl) textEl.value = "";
-    await loadLatestCommentSafe();
-
-    const historyWrap = $("historyWrap");
-    if (historyWrap && !historyWrap.classList.contains("hidden")) {
-      await loadHistory();
-    }
-
     alert("Yorum kaydedildi ✅");
 
   } catch (e) {
     console.error("saveComment catch:", e);
-    alert("Sunucuya bağlanılamadı");
-  }
-};
-
-async function loadLatestCommentSafe() {
-  const box = $("latestCommentBox");
-  const time = $("latestCommentTime");
-  if (!box || !time) return;
-
-  box.textContent = "Yükleniyor...";
-  time.textContent = "";
-
-  try {
-    const res = await fetch(`${API_URL}/comments/patient/${selectedPatient.id}/latest`, {
-      headers: { Authorization: `Bearer ${TOKEN}` }
-    });
-
-    if (!res.ok) {
-      box.textContent = "Henüz yorum yok.";
-      time.textContent = "";
-      return;
-    }
-
-    const data = await res.json();
-    if (!data.comment) {
-      box.textContent = "Henüz yorum yok.";
-      time.textContent = "";
-      return;
-    }
-
-    box.textContent = data.comment.comment ?? "Henüz yorum yok.";
-    time.textContent = `Tarih: ${formatDT(data.comment.created_at)} | Doktor ID: ${data.comment.doctor_id}`;
-
-  } catch (e) {
-    console.error("latest err:", e);
-    box.textContent = "Yorum alınamadı";
-    time.textContent = "";
-  }
-}
-
-window.toggleHistory = async function () {
-  if (!selectedPatient) {
-    alert("Önce hasta seçmelisin.");
-    return;
-  }
-
-  const wrap = $("historyWrap");
-  if (!wrap) return;
-
-  wrap.classList.toggle("hidden");
-  if (!wrap.classList.contains("hidden")) {
-    await loadHistory();
-  }
-};
-
-async function loadHistory() {
-  const list = $("historyList");
-  if (!list) return;
-
-  list.innerHTML = "Yükleniyor...";
-
-  try {
-    const res = await fetch(`${API_URL}/comments/patient/${selectedPatient.id}`, {
-      headers: { Authorization: `Bearer ${TOKEN}` }
-    });
-
-    if (!res.ok) {
-      list.innerHTML = "Geçmiş alınamadı.";
-      return;
-    }
-
-    const rows = await res.json();
-    if (!rows.length) {
-      list.innerHTML = "Geçmiş yorum yok.";
-      return;
-    }
-
-    list.innerHTML = "";
-    rows.forEach(r => {
-      const item = document.createElement("div");
-      item.className = "patient-card";
-      item.style.margin = "0";
-      item.innerHTML = `
-        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
-          <div style="flex:1;">
-            <div style="white-space:pre-wrap;">${escapeHtml(r.comment)}</div>
-            <div style="margin-top:8px; color: var(--muted); font-size:12px;">
-              ${formatDT(r.created_at)} | Doktor ID: ${r.doctor_id} | Yorum ID: ${r.id}
-            </div>
-          </div>
-          <button class="menu-btn" style="background:#ff3b3b; padding:10px 12px;" onclick="deleteComment(${r.id})">Sil</button>
-        </div>
-      `;
-      list.appendChild(item);
-    });
-
-  } catch (e) {
-    console.error("history err:", e);
-    list.innerHTML = "Geçmiş alınamadı.";
-  }
-}
-
-window.deleteComment = async function (commentId) {
-  if (!confirm("Bu yorumu silmek istiyor musun?")) return;
-
-  try {
-    const res = await fetch(`${API_URL}/comments/${commentId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${TOKEN}` }
-    });
-
-    if (!res.ok) {
-      alert("Silinemedi");
-      return;
-    }
-
-    await loadLatestCommentSafe();
-    await loadHistory();
-  } catch (e) {
-    console.error("delete err:", e);
     alert("Sunucuya bağlanılamadı");
   }
 };
