@@ -6,24 +6,44 @@ if (!TOKEN) {
   window.location.href = "../index.html";
 }
 
+const SIMULATED_PATIENT_ID = 3;
+
 let currentDoctor = null;
 let selectedPatient = null;
 let doctorChart = null;
 let doctorActiveChartKey = null;
 
-/* ================= LIVE TIMERS ================= */
-let doctorLiveTimers = {
-  ekg: null,
-  hr: null,
-  temp: null,
-  vitals: null
+const doctorChartState = {
+  ekg: {
+    points: [],
+    windowSize: 160,
+    sliderId: "doctorEkgRange",
+    infoId: "doctorEkgRangeInfo",
+    filterDays: 1,
+    visibleSlice: []
+  },
+  hr: {
+    points: [],
+    windowSize: 120,
+    sliderId: "doctorHrRange",
+    infoId: "doctorHrRangeInfo",
+    filterDays: 1,
+    visibleSlice: []
+  },
+  temp: {
+    points: [],
+    windowSize: 120,
+    sliderId: "doctorTempRange",
+    infoId: "doctorTempRangeInfo",
+    filterDays: 1,
+    visibleSlice: []
+  }
 };
 
-/* ================= MODES ================= */
 const doctorMode = {
-  ekg: "live",
-  hr: "live",
-  temp: "live"
+  ekg: "history",
+  hr: "history",
+  temp: "history"
 };
 
 const doctorPausedByUser = {
@@ -32,71 +52,36 @@ const doctorPausedByUser = {
   temp: false
 };
 
-/* ================= LIVE STATE ================= */
-const doctorLiveState = {
-  ekg: {
-    data: [],
-    labels: [],
-    counter: 0,
-    maxKeep: 2500,
-    windowSize: 320
-  },
-  hr: {
-    data: [],
-    labels: [],
-    counter: 0,
-    maxKeep: 1200,
-    windowSize: 120,
-    value: 76,
-    target: 78
-  },
-  temp: {
-    data: [],
-    labels: [],
-    counter: 0,
-    maxKeep: 1200,
-    windowSize: 120,
-    value: 36.60,
-    target: 36.62
-  }
+const doctorLiveTimers = {
+  ekg: null,
+  hr: null,
+  temp: null
 };
 
-/* ================= ECG SYNTH ================= */
-let doctorBeatTime = 0;
-const LIVE_ECG_DT = 0.05;     // daha yumuşak akış
-const LIVE_HR_MS = 2000;      // 2 saniyede 1 nabız noktası
-const LIVE_TEMP_MS = 3000;    // 3 saniyede 1 sıcaklık noktası
-const LIVE_VITALS_REFRESH_MS = 5000;
-const DOCTOR_AUTO_REFRESH_MS = 5000;
+const doctorLiveData = {
+  ekg: [],
+  hr: [],
+  temp: []
+};
 
-/* ================= CHART STATE ================= */
-const doctorChartState = {
+const doctorMaxLivePoints = {
+  ekg: 1200,
+  hr: 800,
+  temp: 800
+};
+
+const doctorLiveGenerator = {
   ekg: {
-    points: [],
-    windowSize: 320,
-    sliderId: "doctorEkgRange",
-    infoId: "doctorEkgRangeInfo",
-    filterDays: 1,
-    visibleSlice: [],
-    autoRefreshTimer: null
+    phase: 0,
+    sampleIntervalMs: 80
   },
   hr: {
-    points: [],
-    windowSize: 120,
-    sliderId: "doctorHrRange",
-    infoId: "doctorHrRangeInfo",
-    filterDays: 1,
-    visibleSlice: [],
-    autoRefreshTimer: null
+    value: 78,
+    drift: 0
   },
   temp: {
-    points: [],
-    windowSize: 120,
-    sliderId: "doctorTempRange",
-    infoId: "doctorTempRangeInfo",
-    filterDays: 1,
-    visibleSlice: [],
-    autoRefreshTimer: null
+    value: 36.60,
+    drift: 0
   }
 };
 
@@ -111,66 +96,42 @@ function $(id) {
   return document.getElementById(id);
 }
 
-function parseUtcDate(dtStr) {
-  if (!dtStr) return null;
-  const hasTZ = /Z$|[+-]\d{2}:\d{2}$/.test(dtStr);
-  const raw = hasTZ ? dtStr : `${dtStr}Z`;
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return null;
-  return d;
+function isSimulatedPatient() {
+  return selectedPatient && Number(selectedPatient.id) === SIMULATED_PATIENT_ID;
+}
+
+function normalizeDateString(dtStr) {
+  if (!dtStr) return dtStr;
+  if (/[zZ]$/.test(dtStr) || /[+\-]\d{2}:\d{2}$/.test(dtStr)) return dtStr;
+  return `${dtStr}Z`;
 }
 
 function formatDT(dtStr) {
-  const d = parseUtcDate(dtStr);
-  if (!d) return dtStr || "-";
-  return d.toLocaleString("tr-TR", {
-    timeZone: "Europe/Istanbul"
-  });
+  if (!dtStr) return "-";
+  const d = new Date(normalizeDateString(dtStr));
+  if (isNaN(d.getTime())) return dtStr;
+  return d.toLocaleString("tr-TR");
 }
 
 function formatShortDT(dtStr) {
-  const d = parseUtcDate(dtStr);
-  if (!d) return dtStr || "";
+  if (!dtStr) return "";
+  const d = new Date(normalizeDateString(dtStr));
+  if (isNaN(d.getTime())) return dtStr;
   return d.toLocaleTimeString("tr-TR", {
-    timeZone: "Europe/Istanbul",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit"
   });
-}
-
-function nowShortTime() {
-  return new Date().toLocaleTimeString("tr-TR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
-  });
-}
-
-function clamp(v, min, max) {
-  return Math.max(min, Math.min(max, v));
 }
 
 function rand(min, max) {
   return Math.random() * (max - min) + min;
 }
 
-function smoothTowards(current, target, alpha) {
-  return current + (target - current) * alpha;
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
 }
 
-function appendLivePoint(key, label, value) {
-  const s = doctorLiveState[key];
-  s.labels.push(label);
-  s.data.push(value);
-
-  if (s.labels.length > s.maxKeep) {
-    s.labels.shift();
-    s.data.shift();
-  }
-}
-
-/* ================= AUTH ================= */
 async function loadMeDoctor() {
   try {
     const res = await fetch(`${API_URL}/users/me`, {
@@ -233,12 +194,12 @@ window.onPatientChange = async function () {
 
   if (!select) return;
 
+  stopAllDoctorLiveModes(true);
+
   const val = select.value;
 
   if (!val) {
     selectedPatient = null;
-    stopAllDoctorLive();
-    stopAllDoctorAutoRefresh();
 
     if (menu) menu.classList.add("hidden");
     if (detailCard) detailCard.classList.add("hidden");
@@ -283,11 +244,21 @@ window.onPatientChange = async function () {
 
   if ($("doctorText")) $("doctorText").value = "";
 
+  if (isSimulatedPatient()) {
+    doctorMode.ekg = "live";
+    doctorMode.hr = "live";
+    doctorMode.temp = "live";
+  } else {
+    doctorMode.ekg = "history";
+    doctorMode.hr = "history";
+    doctorMode.temp = "history";
+  }
+
+  await loadLatestCommentSafe();
   await loadPatientOverview();
   goHome();
 };
 
-/* ================= PAGE ================= */
 function hideAllPages() {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
 }
@@ -296,12 +267,6 @@ window.showSection = async function (id) {
   if (!selectedPatient) {
     alert("Önce hasta seçmelisin.");
     return;
-  }
-
-  stopAllDoctorAutoRefresh();
-
-  if (id !== "ekg" && id !== "hr" && id !== "temp") {
-    stopAllDoctorLive();
   }
 
   hideAllPages();
@@ -316,15 +281,12 @@ window.showSection = async function (id) {
   }
   if (id === "ekg") {
     await loadDoctorChart("ekg");
-    startDoctorAutoRefresh("ekg");
   }
   if (id === "hr") {
     await loadDoctorChart("hr");
-    startDoctorAutoRefresh("hr");
   }
   if (id === "temp") {
     await loadDoctorChart("temp");
-    startDoctorAutoRefresh("temp");
   }
 };
 
@@ -336,9 +298,6 @@ window.goHome = function () {
   const back = $("backBtn");
   if (back) back.classList.add("hidden");
 
-  stopAllDoctorLive();
-  stopAllDoctorAutoRefresh();
-
   if (doctorChart) {
     doctorChart.destroy();
     doctorChart = null;
@@ -347,8 +306,7 @@ window.goHome = function () {
 };
 
 window.logout = function (silent = false) {
-  stopAllDoctorLive();
-  stopAllDoctorAutoRefresh();
+  stopAllDoctorLiveModes(true);
   localStorage.removeItem("token");
   localStorage.removeItem("role");
   if (!silent) alert("Çıkış yapıldı");
@@ -386,11 +344,29 @@ async function loadPatientOverview() {
   }
 }
 
-/* ================= AXIS ================= */
+/* ================= CHART HELPERS ================= */
 function getDoctorAxisLimits(chartKey) {
-  if (chartKey === "temp") return { min: 36.45, max: 36.75, step: 0.05 };
-  if (chartKey === "hr") return { min: 60, max: 100, step: 5 };
-  if (chartKey === "ekg") return { min: -0.5, max: 1.3, step: 0.2 };
+  if (chartKey === "temp") {
+    if (isSimulatedPatient() && doctorMode[chartKey] === "live") {
+      return { min: 36.45, max: 36.75, step: 0.05 };
+    }
+    return { min: 35.5, max: 38.5, step: 0.5 };
+  }
+
+  if (chartKey === "hr") {
+    if (isSimulatedPatient() && doctorMode[chartKey] === "live") {
+      return { min: 60, max: 100, step: 5 };
+    }
+    return { min: 40, max: 140, step: 10 };
+  }
+
+  if (chartKey === "ekg") {
+    if (isSimulatedPatient() && doctorMode[chartKey] === "live") {
+      return { min: -0.5, max: 1.3, step: 0.2 };
+    }
+    return { min: 0.0, max: 2.2, step: 0.2 };
+  }
+
   return {};
 }
 
@@ -407,14 +383,22 @@ function doctorColor(chartKey) {
 }
 
 function doctorLabel(chartKey) {
-  if (chartKey === "ekg") return doctorMode.ekg === "live" ? "Canlı EKG" : "EKG";
-  if (chartKey === "hr") return doctorMode.hr === "live" ? "Canlı Nabız" : "BPM";
-  return doctorMode.temp === "live" ? "Canlı Sıcaklık" : "°C";
+  if (chartKey === "ekg") {
+    return (isSimulatedPatient() && doctorMode.ekg === "live") ? "Canlı EKG" : "EKG";
+  }
+  if (chartKey === "hr") {
+    return (isSimulatedPatient() && doctorMode.hr === "live") ? "Canlı Nabız" : "BPM";
+  }
+  return (isSimulatedPatient() && doctorMode.temp === "live") ? "Canlı Sıcaklık" : "°C";
 }
 
-/* ================= CHART BUILD ================= */
+function currentDoctorSlice(chartKey) {
+  return doctorChartState[chartKey]?.visibleSlice || [];
+}
+
 function buildDoctorChart(chartKey) {
-  const canvas = $(doctorCanvasId(chartKey));
+  const canvasId = doctorCanvasId(chartKey);
+  const canvas = $(canvasId);
   if (!canvas) return null;
 
   const ctx = canvas.getContext("2d");
@@ -430,10 +414,10 @@ function buildDoctorChart(chartKey) {
         data: [],
         borderColor: doctorColor(chartKey),
         backgroundColor: doctorColor(chartKey),
-        borderWidth: 4,
-        tension: chartKey === "ekg" ? 0.08 : 0.22,
-        pointRadius: chartKey === "ekg" ? 0 : 2,
-        pointHoverRadius: chartKey === "ekg" ? 0 : 5,
+        borderWidth: chartKey === "ekg" ? 3.5 : 3,
+        tension: chartKey === "ekg" ? 0.18 : 0.25,
+        pointRadius: chartKey === "ekg" ? 0 : 3,
+        pointHoverRadius: 6,
         pointBackgroundColor: "#ffffff",
         pointBorderColor: doctorColor(chartKey),
         pointBorderWidth: 2,
@@ -458,7 +442,14 @@ function buildDoctorChart(chartKey) {
         tooltip: {
           backgroundColor: "rgba(11,16,32,.96)",
           titleColor: "#ffffff",
-          bodyColor: "#e7eaf3"
+          bodyColor: "#e7eaf3",
+          callbacks: {
+            title(items) {
+              const i = items[0]?.dataIndex ?? 0;
+              const current = currentDoctorSlice(doctorActiveChartKey)?.[i];
+              return current ? formatDT(current.created_at) : "";
+            }
+          }
         }
       },
       scales: {
@@ -488,30 +479,30 @@ function buildDoctorChart(chartKey) {
   });
 }
 
-/* ================= RANGE ================= */
 function bindDoctorRangeInputs() {
   ["ekg", "hr", "temp"].forEach(key => {
     const slider = $(doctorChartState[key].sliderId);
     if (!slider) return;
 
     slider.addEventListener("input", () => {
-      if (doctorMode[key] === "live") {
-        const liveLen = doctorLiveState[key].data.length;
-        const maxStart = Math.max(0, liveLen - doctorChartState[key].windowSize);
-        const currentValue = Number(slider.value);
+      if (doctorMode[key] === "live" && isSimulatedPatient()) {
+        const maxStart = Math.max(0, doctorLiveData[key].length - doctorChartState[key].windowSize);
+        const currentVal = Number(slider.value);
 
-        doctorPausedByUser[key] = currentValue < maxStart;
-        renderDoctorLiveWindow(key, currentValue);
-        return;
+        doctorPausedByUser[key] = currentVal < maxStart;
+        renderDoctorLiveWindow(key, currentVal);
+      } else {
+        renderDoctorWindow(key, Number(slider.value));
       }
-
-      renderDoctorWindow(key, Number(slider.value));
     });
   });
 }
 
+/* ================= HISTORY MODE ================= */
 function renderDoctorWindow(chartKey, startIndex = 0) {
   const state = doctorChartState[chartKey];
+  if (!state) return;
+
   const endIndex = Math.min(startIndex + state.windowSize, state.points.length);
   const slice = state.points.slice(startIndex, endIndex);
   state.visibleSlice = slice;
@@ -519,36 +510,16 @@ function renderDoctorWindow(chartKey, startIndex = 0) {
   if (doctorChart && doctorActiveChartKey === chartKey) {
     doctorChart.data.labels = slice.map(p => formatShortDT(p.created_at));
     doctorChart.data.datasets[0].data = slice.map(p => p.value);
+    doctorChart.data.datasets[0].label = doctorLabel(chartKey);
     doctorChart.update("none");
   }
 
   const info = $(state.infoId);
   if (info) {
-    info.textContent = slice.length ? `${startIndex + 1}-${endIndex} / ${state.points.length}` : "Veri yok";
-  }
-}
-
-function renderDoctorLiveWindow(chartKey, startIndex = 0) {
-  const live = doctorLiveState[chartKey];
-  const endIndex = Math.min(startIndex + doctorChartState[chartKey].windowSize, live.data.length);
-
-  const sliceLabels = live.labels.slice(startIndex, endIndex);
-  const sliceData = live.data.slice(startIndex, endIndex);
-
-  if (doctorChart && doctorActiveChartKey === chartKey) {
-    doctorChart.data.labels = sliceLabels;
-    doctorChart.data.datasets[0].data = sliceData;
-    doctorChart.update("none");
-  }
-
-  const info = $(doctorChartState[chartKey].infoId);
-  if (info) {
-    if (doctorPausedByUser[chartKey]) {
-      info.textContent = `${startIndex + 1}-${endIndex} / ${live.data.length}`;
+    if (!slice.length) {
+      info.textContent = "Veri yok";
     } else {
-      if (chartKey === "ekg") info.textContent = "Canlı EKG simülasyonu aktif";
-      if (chartKey === "hr") info.textContent = "Canlı nabız simülasyonu aktif";
-      if (chartKey === "temp") info.textContent = "Canlı sıcaklık simülasyonu aktif";
+      info.textContent = `${startIndex + 1}-${endIndex} / ${state.points.length}`;
     }
   }
 }
@@ -559,28 +530,167 @@ function updateDoctorSlider(chartKey) {
   if (!slider) return;
 
   const maxStart = Math.max(0, state.points.length - state.windowSize);
-  slider.min = 0;
   slider.max = maxStart;
   if (Number(slider.value) > maxStart) slider.value = maxStart;
+  slider.disabled = false;
 }
 
-function updateDoctorLiveSlider(chartKey) {
-  const slider = $(doctorChartState[chartKey].sliderId);
-  if (!slider) return;
+/* ================= LIVE MODE ================= */
+function ensureDoctorLiveSeed(chartKey) {
+  if (doctorLiveData[chartKey].length) return;
 
-  const liveLen = doctorLiveState[chartKey].data.length;
-  const maxStart = Math.max(0, liveLen - doctorChartState[chartKey].windowSize);
+  const now = Date.now();
 
-  slider.min = 0;
-  slider.max = maxStart;
+  if (chartKey === "ekg") {
+    for (let i = 0; i < 220; i++) {
+      appendDoctorLivePoint(
+        "ekg",
+        generateDoctorLiveEkg(),
+        new Date(now - (220 - i) * doctorLiveGenerator.ekg.sampleIntervalMs).toISOString(),
+        false
+      );
+    }
+  }
 
-  if (!doctorPausedByUser[chartKey]) {
-    slider.value = maxStart;
+  if (chartKey === "hr") {
+    for (let i = 0; i < 140; i++) {
+      appendDoctorLivePoint(
+        "hr",
+        generateDoctorLiveHr(),
+        new Date(now - (140 - i) * 1000).toISOString(),
+        false
+      );
+    }
+  }
+
+  if (chartKey === "temp") {
+    for (let i = 0; i < 140; i++) {
+      appendDoctorLivePoint(
+        "temp",
+        generateDoctorLiveTemp(),
+        new Date(now - (140 - i) * 1000).toISOString(),
+        false
+      );
+    }
   }
 }
 
+function appendDoctorLivePoint(chartKey, value, createdAt = new Date().toISOString(), render = true) {
+  const arr = doctorLiveData[chartKey];
+  arr.push({
+    value,
+    created_at: createdAt
+  });
+
+  if (arr.length > doctorMaxLivePoints[chartKey]) {
+    arr.shift();
+  }
+
+  if (render && doctorActiveChartKey === chartKey && doctorMode[chartKey] === "live") {
+    updateDoctorLiveSlider(chartKey);
+  }
+}
+
+function renderDoctorLiveWindow(chartKey, startIndex = 0) {
+  const state = doctorChartState[chartKey];
+  const data = doctorLiveData[chartKey];
+
+  const endIndex = Math.min(startIndex + state.windowSize, data.length);
+  const slice = data.slice(startIndex, endIndex);
+  state.visibleSlice = slice;
+
+  if (doctorChart && doctorActiveChartKey === chartKey) {
+    doctorChart.data.labels = slice.map(p => formatShortDT(p.created_at));
+    doctorChart.data.datasets[0].data = slice.map(p => p.value);
+    doctorChart.data.datasets[0].label = doctorLabel(chartKey);
+    doctorChart.update("none");
+  }
+
+  const info = $(state.infoId);
+  if (info) {
+    if (!slice.length) {
+      info.textContent = "Veri yok";
+    } else {
+      const maxStart = Math.max(0, data.length - state.windowSize);
+      const liveText = doctorPausedByUser[chartKey]
+        ? "Geçmiş görüntüleniyor"
+        : `Canlı ${chartKey === "ekg" ? "EKG" : chartKey === "hr" ? "nabız" : "sıcaklık"} simülasyonu aktif`;
+
+      info.textContent = `${startIndex + 1}-${endIndex} / ${data.length} | ${liveText}`;
+
+      const slider = $(state.sliderId);
+      if (slider && !doctorPausedByUser[chartKey] && Number(slider.value) !== maxStart) {
+        slider.value = maxStart;
+      }
+    }
+  }
+}
+
+function updateDoctorLiveSlider(chartKey) {
+  const state = doctorChartState[chartKey];
+  const slider = $(state.sliderId);
+  if (!slider) return;
+
+  const maxStart = Math.max(0, doctorLiveData[chartKey].length - state.windowSize);
+  slider.max = maxStart;
+  slider.disabled = false;
+
+  if (!doctorPausedByUser[chartKey]) {
+    slider.value = maxStart;
+    renderDoctorLiveWindow(chartKey, maxStart);
+  }
+}
+
+function startDoctorLiveMode(chartKey) {
+  if (!isSimulatedPatient()) return;
+
+  ensureDoctorLiveSeed(chartKey);
+
+  if (!doctorLiveTimers[chartKey]) {
+    const intervalMs = chartKey === "ekg" ? doctorLiveGenerator.ekg.sampleIntervalMs : 1000;
+
+    doctorLiveTimers[chartKey] = setInterval(() => {
+      if (chartKey === "ekg") {
+        appendDoctorLivePoint("ekg", generateDoctorLiveEkg());
+      }
+      if (chartKey === "hr") {
+        appendDoctorLivePoint("hr", generateDoctorLiveHr());
+      }
+      if (chartKey === "temp") {
+        appendDoctorLivePoint("temp", generateDoctorLiveTemp());
+      }
+    }, intervalMs);
+  }
+
+  if (doctorChart) {
+    doctorChart.destroy();
+    doctorChart = null;
+  }
+
+  doctorChart = buildDoctorChart(chartKey);
+  doctorPausedByUser[chartKey] = false;
+  updateDoctorLiveSlider(chartKey);
+}
+
+function stopDoctorLiveMode(chartKey, clearData = false) {
+  if (doctorLiveTimers[chartKey]) {
+    clearInterval(doctorLiveTimers[chartKey]);
+    doctorLiveTimers[chartKey] = null;
+  }
+
+  doctorPausedByUser[chartKey] = false;
+
+  if (clearData) {
+    doctorLiveData[chartKey] = [];
+  }
+}
+
+function stopAllDoctorLiveModes(clearData = false) {
+  ["ekg", "hr", "temp"].forEach(key => stopDoctorLiveMode(key, clearData));
+}
+
 window.doctorGoLiveWindow = function (chartKey) {
-  if (doctorMode[chartKey] === "live") {
+  if (doctorMode[chartKey] === "live" && isSimulatedPatient()) {
     doctorPausedByUser[chartKey] = false;
     updateDoctorLiveSlider(chartKey);
 
@@ -598,22 +708,27 @@ window.doctorGoLiveWindow = function (chartKey) {
   renderDoctorWindow(chartKey, maxStart);
 };
 
-/* ================= FILTER ================= */
 window.setDoctorFilter = async function (chartKey, days) {
   doctorChartState[chartKey].filterDays = days;
-  doctorMode[chartKey] = days === 1 ? "live" : "history";
+
+  if (isSimulatedPatient() && days === 1) {
+    doctorMode[chartKey] = "live";
+  } else {
+    doctorMode[chartKey] = "history";
+  }
+
   await loadDoctorChart(chartKey);
 };
 
 async function loadDoctorChart(chartKey) {
   if (!selectedPatient) return;
 
-  if (doctorMode[chartKey] === "live") {
-    await startDoctorLiveMode(chartKey);
+  if (doctorMode[chartKey] === "live" && isSimulatedPatient()) {
+    startDoctorLiveMode(chartKey);
     return;
   }
 
-  stopDoctorLiveMode(chartKey);
+  stopDoctorLiveMode(chartKey, false);
 
   const kindMap = {
     ekg: "ecg",
@@ -644,12 +759,13 @@ async function loadDoctorChart(chartKey) {
     doctorChart = buildDoctorChart(chartKey);
     updateDoctorSlider(chartKey);
 
-    const maxStart = Math.max(0, doctorChartState[chartKey].points.length - doctorChartState[chartKey].windowSize);
+    const maxStart = Math.max(
+      0,
+      doctorChartState[chartKey].points.length - doctorChartState[chartKey].windowSize
+    );
+
     const slider = $(doctorChartState[chartKey].sliderId);
-    if (slider) {
-      slider.disabled = false;
-      slider.value = maxStart;
-    }
+    if (slider) slider.value = maxStart;
 
     renderDoctorWindow(chartKey, maxStart);
 
@@ -658,283 +774,52 @@ async function loadDoctorChart(chartKey) {
   }
 }
 
-/* ================= AUTO REFRESH ================= */
-function stopDoctorAutoRefresh(chartKey) {
-  const state = doctorChartState[chartKey];
-  if (state && state.autoRefreshTimer) {
-    clearInterval(state.autoRefreshTimer);
-    state.autoRefreshTimer = null;
-  }
+/* ================= LIVE DATA GENERATORS ================= */
+function generateDoctorLiveHr() {
+  const s = doctorLiveGenerator.hr;
+
+  s.drift += rand(-0.6, 0.6);
+  s.drift = clamp(s.drift, -4, 4);
+
+  const target = 78 + 3 * Math.sin(Date.now() / 18000) + s.drift;
+  s.value += (target - s.value) * 0.18 + rand(-1.0, 1.0);
+  s.value = clamp(s.value, 68, 92);
+
+  return Math.round(s.value);
 }
 
-function stopAllDoctorAutoRefresh() {
-  ["ekg", "hr", "temp"].forEach(stopDoctorAutoRefresh);
+function generateDoctorLiveTemp() {
+  const s = doctorLiveGenerator.temp;
+
+  const slowWave = 36.60 + 0.02 * Math.sin(Date.now() / 60000);
+  s.value += (slowWave - s.value) * 0.15 + rand(-0.006, 0.006);
+  s.value = clamp(s.value, 36.55, 36.65);
+
+  return Number(s.value.toFixed(2));
 }
 
-function startDoctorAutoRefresh(chartKey) {
-  stopDoctorAutoRefresh(chartKey);
+function generateDoctorLiveEkg() {
+  const s = doctorLiveGenerator.ekg;
+  const hr = doctorLiveGenerator.hr.value || 78;
 
-  doctorChartState[chartKey].autoRefreshTimer = setInterval(async () => {
-    const page = $(chartKey);
-    if (!page || !page.classList.contains("active")) return;
-    if (!selectedPatient) return;
-    if (doctorMode[chartKey] === "live") return;
+  const beatHz = hr / 60;
+  const dt = s.sampleIntervalMs / 1000;
+  s.phase += beatHz * dt;
 
-    await loadDoctorChart(chartKey);
-  }, DOCTOR_AUTO_REFRESH_MS);
-}
+  while (s.phase >= 1) s.phase -= 1;
 
-/* ================= BACKEND LIVE VALUES ================= */
-async function fetchDoctorLiveVitals() {
-  if (!selectedPatient) return;
+  const t = s.phase;
 
-  try {
-    const res = await fetch(`${API_URL}/measurements/patient/${selectedPatient.id}/latest`, {
-      headers: { Authorization: `Bearer ${TOKEN}` }
-    });
+  let value = 0;
+  value += 0.10 * Math.exp(-Math.pow((t - 0.18) / 0.035, 2));  // P
+  value += -0.14 * Math.exp(-Math.pow((t - 0.36) / 0.012, 2)); // Q
+  value += 1.08 * Math.exp(-Math.pow((t - 0.40) / 0.008, 2));  // R
+  value += -0.28 * Math.exp(-Math.pow((t - 0.43) / 0.014, 2)); // S
+  value += 0.28 * Math.exp(-Math.pow((t - 0.68) / 0.06, 2));   // T
+  value += 0.015 * Math.sin(Date.now() / 500);
+  value += rand(-0.015, 0.015);
 
-    if (!res.ok) return;
-    const data = await res.json();
-
-    const hrIncoming = Number(data.heart_rate);
-    if (!isNaN(hrIncoming) && hrIncoming > 0) {
-      doctorLiveState.hr.target = clamp(hrIncoming, 65, 95);
-    }
-
-    const tempIncoming = Number(data.temperature);
-    if (!isNaN(tempIncoming) && tempIncoming > 35 && tempIncoming < 38) {
-      doctorLiveState.temp.target = clamp(tempIncoming, 36.50, 36.72);
-    }
-
-    const ekgEl = $("docLastEcg");
-    const tempEl = $("docLastTemp");
-    const hrEl = $("docLastHr");
-
-    if (ekgEl) ekgEl.textContent = Number(data.ecg_value).toFixed(3);
-    if (tempEl) tempEl.textContent = `${Number(data.temperature).toFixed(2)} °C`;
-    if (hrEl) hrEl.textContent = `${data.heart_rate} BPM`;
-
-  } catch (e) {
-    console.error("fetchDoctorLiveVitals error:", e);
-  }
-}
-
-/* ================= ECG LIVE ================= */
-function ecgGaussian(x, mu, sigma, amp) {
-  return amp * Math.exp(-0.5 * Math.pow((x - mu) / sigma, 2));
-}
-
-function nextSyntheticEcgSample() {
-  const hr = clamp(Number(doctorLiveState.hr.target) || 76, 55, 120);
-  const beatDuration = 60 / hr;
-  const x = doctorBeatTime / beatDuration;
-
-  let y = 0;
-  y += ecgGaussian(x, 0.18, 0.025, 0.10);   // P
-  y += ecgGaussian(x, 0.36, 0.010, -0.14);  // Q
-  y += ecgGaussian(x, 0.40, 0.006, 1.00);   // R
-  y += ecgGaussian(x, 0.44, 0.012, -0.26);  // S
-  y += ecgGaussian(x, 0.68, 0.055, 0.28);   // T
-  y += 0.010 * Math.sin(2 * Math.PI * x);
-  y += (Math.random() - 0.5) * 0.012;
-
-  doctorBeatTime += LIVE_ECG_DT;
-  if (doctorBeatTime >= beatDuration) doctorBeatTime -= beatDuration;
-
-  return Number(y.toFixed(3));
-}
-
-function seedDoctorLiveEcgSeries() {
-  const s = doctorLiveState.ekg;
-  s.data = [];
-  s.labels = [];
-  s.counter = 0;
-  doctorBeatTime = 0;
-
-  for (let i = 0; i < 700; i++) {
-    s.counter += 1;
-    appendLivePoint("ekg", `${s.counter}`, nextSyntheticEcgSample());
-  }
-}
-
-function updateDoctorLiveEcgFrame() {
-  if (doctorMode.ekg !== "live") return;
-
-  const s = doctorLiveState.ekg;
-  s.counter += 1;
-  appendLivePoint("ekg", `${s.counter}`, nextSyntheticEcgSample());
-
-  updateDoctorLiveSlider("ekg");
-
-  const slider = $("doctorEkgRange");
-  if (!slider) return;
-
-  if (!doctorPausedByUser.ekg && doctorChart && doctorActiveChartKey === "ekg") {
-    renderDoctorLiveWindow("ekg", Number(slider.value));
-  }
-}
-
-/* ================= HR LIVE ================= */
-function seedDoctorLiveHrSeries() {
-  const s = doctorLiveState.hr;
-  s.data = [];
-  s.labels = [];
-  s.counter = 0;
-  s.value = 76;
-  s.target = s.target || 78;
-
-  for (let i = 0; i < 220; i++) {
-    s.counter += 1;
-
-    if (i % 25 === 0) {
-      s.target = clamp(s.target + rand(-2, 2), 68, 90);
-    }
-
-    s.value = smoothTowards(s.value, s.target, 0.12);
-    s.value += rand(-0.8, 0.8);
-    s.value = clamp(s.value, 65, 95);
-
-    appendLivePoint("hr", nowShortTime(), Number(s.value.toFixed(0)));
-  }
-}
-
-function updateDoctorLiveHrFrame() {
-  if (doctorMode.hr !== "live") return;
-
-  const s = doctorLiveState.hr;
-  s.counter += 1;
-
-  if (s.counter % 12 === 0) {
-    s.target = clamp(s.target + rand(-2, 2), 68, 90);
-  }
-
-  s.value = smoothTowards(s.value, s.target, 0.10);
-  s.value += rand(-0.7, 0.7);
-  s.value = clamp(s.value, 65, 95);
-
-  appendLivePoint("hr", nowShortTime(), Number(s.value.toFixed(0)));
-
-  updateDoctorLiveSlider("hr");
-
-  const slider = $("doctorHrRange");
-  if (!slider) return;
-
-  if (!doctorPausedByUser.hr && doctorChart && doctorActiveChartKey === "hr") {
-    renderDoctorLiveWindow("hr", Number(slider.value));
-  }
-}
-
-/* ================= TEMP LIVE ================= */
-function seedDoctorLiveTempSeries() {
-  const s = doctorLiveState.temp;
-  s.data = [];
-  s.labels = [];
-  s.counter = 0;
-  s.value = 36.60;
-  s.target = 36.61;
-
-  for (let i = 0; i < 220; i++) {
-    s.counter += 1;
-
-    if (i % 30 === 0) {
-      s.target = clamp(s.target + rand(-0.015, 0.015), 36.55, 36.67);
-    }
-
-    s.value = smoothTowards(s.value, s.target, 0.08);
-    s.value += rand(-0.004, 0.004);
-    s.value = clamp(s.value, 36.54, 36.68);
-
-    appendLivePoint("temp", nowShortTime(), Number(s.value.toFixed(2)));
-  }
-}
-
-function updateDoctorLiveTempFrame() {
-  if (doctorMode.temp !== "live") return;
-
-  const s = doctorLiveState.temp;
-  s.counter += 1;
-
-  if (s.counter % 10 === 0) {
-    s.target = clamp(s.target + rand(-0.01, 0.01), 36.56, 36.66);
-  }
-
-  s.value = smoothTowards(s.value, s.target, 0.07);
-  s.value += rand(-0.003, 0.003);
-  s.value = clamp(s.value, 36.54, 36.68);
-
-  appendLivePoint("temp", nowShortTime(), Number(s.value.toFixed(2)));
-
-  updateDoctorLiveSlider("temp");
-
-  const slider = $("doctorTempRange");
-  if (!slider) return;
-
-  if (!doctorPausedByUser.temp && doctorChart && doctorActiveChartKey === "temp") {
-    renderDoctorLiveWindow("temp", Number(slider.value));
-  }
-}
-
-/* ================= LIVE START / STOP ================= */
-function stopDoctorLiveMode(chartKey) {
-  if (doctorLiveTimers[chartKey]) {
-    clearInterval(doctorLiveTimers[chartKey]);
-    doctorLiveTimers[chartKey] = null;
-  }
-  doctorPausedByUser[chartKey] = false;
-}
-
-function stopAllDoctorLive() {
-  stopDoctorLiveMode("ekg");
-  stopDoctorLiveMode("hr");
-  stopDoctorLiveMode("temp");
-
-  if (doctorLiveTimers.vitals) {
-    clearInterval(doctorLiveTimers.vitals);
-    doctorLiveTimers.vitals = null;
-  }
-}
-
-async function startDoctorLiveMode(chartKey) {
-  stopDoctorLiveMode(chartKey);
-
-  if (!doctorLiveTimers.vitals) {
-    await fetchDoctorLiveVitals();
-    doctorLiveTimers.vitals = setInterval(fetchDoctorLiveVitals, LIVE_VITALS_REFRESH_MS);
-  }
-
-  if (doctorChart) {
-    doctorChart.destroy();
-    doctorChart = null;
-  }
-
-  doctorChart = buildDoctorChart(chartKey);
-  if (!doctorChart) return;
-
-  doctorPausedByUser[chartKey] = false;
-
-  const slider = $(doctorChartState[chartKey].sliderId);
-  if (slider) slider.disabled = false;
-
-  if (chartKey === "ekg") {
-    seedDoctorLiveEcgSeries();
-    updateDoctorLiveSlider("ekg");
-    renderDoctorLiveWindow("ekg", Number($("doctorEkgRange").value));
-    doctorLiveTimers.ekg = setInterval(updateDoctorLiveEcgFrame, LIVE_ECG_DT * 1000);
-  }
-
-  if (chartKey === "hr") {
-    seedDoctorLiveHrSeries();
-    updateDoctorLiveSlider("hr");
-    renderDoctorLiveWindow("hr", Number($("doctorHrRange").value));
-    doctorLiveTimers.hr = setInterval(updateDoctorLiveHrFrame, LIVE_HR_MS);
-  }
-
-  if (chartKey === "temp") {
-    seedDoctorLiveTempSeries();
-    updateDoctorLiveSlider("temp");
-    renderDoctorLiveWindow("temp", Number($("doctorTempRange").value));
-    doctorLiveTimers.temp = setInterval(updateDoctorLiveTempFrame, LIVE_TEMP_MS);
-  }
+  return Number(value.toFixed(3));
 }
 
 /* ================= COMMENTS ================= */
@@ -969,6 +854,7 @@ window.saveComment = async function () {
     }
 
     if (textEl) textEl.value = "";
+    await loadLatestCommentSafe();
 
     const historyWrap = $("historyWrap");
     if (historyWrap && !historyWrap.classList.contains("hidden")) {
@@ -982,6 +868,42 @@ window.saveComment = async function () {
     alert("Sunucuya bağlanılamadı");
   }
 };
+
+async function loadLatestCommentSafe() {
+  const box = $("latestCommentBox");
+  const time = $("latestCommentTime");
+  if (!box || !time || !selectedPatient) return;
+
+  box.textContent = "Yükleniyor...";
+  time.textContent = "";
+
+  try {
+    const res = await fetch(`${API_URL}/comments/patient/${selectedPatient.id}/latest`, {
+      headers: { Authorization: `Bearer ${TOKEN}` }
+    });
+
+    if (!res.ok) {
+      box.textContent = "Henüz yorum yok.";
+      time.textContent = "";
+      return;
+    }
+
+    const data = await res.json();
+    if (!data.comment) {
+      box.textContent = "Henüz yorum yok.";
+      time.textContent = "";
+      return;
+    }
+
+    box.textContent = data.comment.comment ?? "Henüz yorum yok.";
+    time.textContent = `Tarih: ${formatDT(data.comment.created_at)} | Doktor ID: ${data.comment.doctor_id}`;
+
+  } catch (e) {
+    console.error("latest err:", e);
+    box.textContent = "Yorum alınamadı";
+    time.textContent = "";
+  }
+}
 
 window.toggleHistory = async function () {
   if (!selectedPatient) {
@@ -1000,7 +922,7 @@ window.toggleHistory = async function () {
 
 async function loadHistory() {
   const list = $("historyList");
-  if (!list) return;
+  if (!list || !selectedPatient) return;
 
   list.innerHTML = "Yükleniyor...";
 
@@ -1059,6 +981,7 @@ window.deleteComment = async function (commentId) {
       return;
     }
 
+    await loadLatestCommentSafe();
     await loadHistory();
   } catch (e) {
     console.error("delete err:", e);
