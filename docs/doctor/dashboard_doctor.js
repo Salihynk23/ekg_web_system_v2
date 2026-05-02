@@ -39,13 +39,13 @@ let doctorMode = {
 };
 
 const LIVE_ECG_POINTS = 320;
-const LIVE_HR_POINTS = 120;
-const LIVE_TEMP_POINTS = 120;
+const LIVE_HR_POINTS = 160;
+const LIVE_TEMP_POINTS = 160;
 
 const LIVE_ECG_DT = 0.06;
-const LIVE_HR_DT = 1.0;
-const LIVE_TEMP_DT = 1.5;
-const LIVE_VITALS_REFRESH_MS = 4000;
+const LIVE_HR_DT = 2.0;
+const LIVE_TEMP_DT = 3.0;
+const LIVE_VITALS_REFRESH_MS = 5000;
 const DOCTOR_AUTO_REFRESH_MS = 4000;
 
 const doctorChartState = {
@@ -123,6 +123,17 @@ function clamp(v, min, max) {
 
 function rand(min, max) {
   return Math.random() * (max - min) + min;
+}
+
+function smoothTowards(current, target, alpha) {
+  return current + (target - current) * alpha;
+}
+
+function appendLivePoint(series, value, maxLen = 600) {
+  series.push(value);
+  if (series.length > maxLen) {
+    series.shift();
+  }
 }
 
 /* ================= AUTH / PATIENTS ================= */
@@ -343,7 +354,7 @@ async function loadPatientOverview() {
 
 /* ================= CHART HELPERS ================= */
 function getDoctorAxisLimits(chartKey) {
-  if (chartKey === "temp") return { min: 35, max: 39, step: 0.5 };
+  if (chartKey === "temp") return { min: 36.0, max: 37.5, step: 0.2 };
   if (chartKey === "hr") return { min: 40, max: 160, step: 10 };
   if (chartKey === "ekg") return { min: -0.5, max: 1.3, step: 0.2 };
   return {};
@@ -385,9 +396,9 @@ function buildDoctorChart(chartKey) {
         borderColor: doctorColor(chartKey),
         backgroundColor: doctorColor(chartKey),
         borderWidth: 4,
-        tension: chartKey === "ekg" ? 0.08 : 0.28,
-        pointRadius: chartKey === "ekg" ? 0 : 3,
-        pointHoverRadius: chartKey === "ekg" ? 0 : 6,
+        tension: chartKey === "ekg" ? 0.08 : 0.25,
+        pointRadius: chartKey === "ekg" ? 0 : 2,
+        pointHoverRadius: chartKey === "ekg" ? 0 : 5,
         pointBackgroundColor: "#ffffff",
         pointBorderColor: doctorColor(chartKey),
         pointBorderWidth: 2,
@@ -489,11 +500,7 @@ function renderDoctorLiveWindow(chartKey, startIndex = 0) {
   const slice = liveSeries.slice(startIndex, endIndex);
 
   if (doctorChart && doctorActiveChartKey === chartKey) {
-    if (chartKey === "ekg") {
-      doctorChart.data.labels = new Array(slice.length).fill("");
-    } else {
-      doctorChart.data.labels = slice.map((_, i) => `${i + 1}`);
-    }
+    doctorChart.data.labels = slice.map((_, i) => `${i + 1}`);
     doctorChart.data.datasets[0].data = slice;
     doctorChart.update("none");
   }
@@ -659,9 +666,12 @@ async function fetchDoctorLiveVitals() {
 
     doctorLiveHr = Number(data.heart_rate) || doctorLiveHr;
 
-    // 0 geliyorsa görsel simülasyonda gerçekçi sıcaklık kullan
     const incomingTemp = Number(data.temperature);
-    doctorLiveTemp = incomingTemp > 1 ? incomingTemp : 36.6;
+    if (incomingTemp > 1) {
+      doctorLiveTemp = incomingTemp;
+    } else if (!doctorLiveTemp || doctorLiveTemp <= 1) {
+      doctorLiveTemp = 36.6;
+    }
 
     const ekgEl = $("docLastEcg");
     const tempEl = $("docLastTemp");
@@ -710,18 +720,15 @@ function seedDoctorLiveEcgSeries() {
 }
 
 function updateDoctorLiveEcgFrame() {
-  if (!doctorChart || doctorActiveChartKey !== "ekg") return;
   if (doctorMode.ekg !== "live") return;
 
-  doctorLiveSeries.push(nextSyntheticEcgSample());
-  if (doctorLiveSeries.length > 3000) doctorLiveSeries.shift();
-
+  appendLivePoint(doctorLiveSeries, nextSyntheticEcgSample(), 3000);
   updateDoctorLiveSlider("ekg");
 
   const slider = $("doctorEkgRange");
   if (!slider) return;
 
-  if (!doctorPausedByUser.ekg) {
+  if (!doctorPausedByUser.ekg && doctorChart && doctorActiveChartKey === "ekg") {
     renderDoctorLiveWindow("ekg", Number(slider.value));
   }
 }
@@ -729,11 +736,13 @@ function updateDoctorLiveEcgFrame() {
 /* ================= LIVE HR ================= */
 function seedDoctorLiveHrSeries() {
   doctorLiveHrSeries = [];
-  let base = clamp(doctorLiveHr || 75, 50, 140);
 
-  for (let i = 0; i < 180; i++) {
-    base += rand(-2, 2);
-    base = clamp(base, 55, 130);
+  let base = clamp(Number(doctorLiveHr) || 78, 60, 105);
+
+  for (let i = 0; i < LIVE_HR_POINTS; i++) {
+    base = smoothTowards(base, doctorLiveHr || 78, 0.08);
+    base += rand(-1.2, 1.2);
+    base = clamp(base, 58, 110);
     doctorLiveHrSeries.push(Number(base.toFixed(0)));
   }
 }
@@ -743,15 +752,15 @@ function updateDoctorLiveHrFrame() {
 
   let last = doctorLiveHrSeries.length
     ? doctorLiveHrSeries[doctorLiveHrSeries.length - 1]
-    : doctorLiveHr;
+    : (doctorLiveHr || 78);
 
-  const target = clamp(doctorLiveHr || 75, 50, 140);
-  const drift = (target - last) * 0.25;
-  const next = clamp(last + drift + rand(-2, 2), 50, 145);
+  const target = clamp(Number(doctorLiveHr) || 78, 60, 110);
 
-  doctorLiveHrSeries.push(Number(next.toFixed(0)));
-  if (doctorLiveHrSeries.length > 500) doctorLiveHrSeries.shift();
+  let next = smoothTowards(last, target, 0.18);
+  next += rand(-1.5, 1.5);
+  next = clamp(next, 55, 115);
 
+  appendLivePoint(doctorLiveHrSeries, Number(next.toFixed(0)), 600);
   updateDoctorLiveSlider("hr");
 
   const slider = $("doctorHrRange");
@@ -765,11 +774,14 @@ function updateDoctorLiveHrFrame() {
 /* ================= LIVE TEMP ================= */
 function seedDoctorLiveTempSeries() {
   doctorLiveTempSeries = [];
-  let base = doctorLiveTemp > 1 ? doctorLiveTemp : 36.6;
 
-  for (let i = 0; i < 180; i++) {
-    base += rand(-0.03, 0.03);
-    base = clamp(base, 36.1, 37.4);
+  let base = (doctorLiveTemp && doctorLiveTemp > 1) ? doctorLiveTemp : 36.6;
+  base = clamp(base, 36.2, 37.0);
+
+  for (let i = 0; i < LIVE_TEMP_POINTS; i++) {
+    base = smoothTowards(base, 36.6, 0.06);
+    base += rand(-0.01, 0.01);
+    base = clamp(base, 36.2, 37.0);
     doctorLiveTempSeries.push(Number(base.toFixed(2)));
   }
 }
@@ -779,15 +791,16 @@ function updateDoctorLiveTempFrame() {
 
   let last = doctorLiveTempSeries.length
     ? doctorLiveTempSeries[doctorLiveTempSeries.length - 1]
-    : doctorLiveTemp;
+    : ((doctorLiveTemp && doctorLiveTemp > 1) ? doctorLiveTemp : 36.6);
 
-  const target = doctorLiveTemp > 1 ? doctorLiveTemp : 36.6;
-  const drift = (target - last) * 0.18;
-  const next = clamp(last + drift + rand(-0.03, 0.03), 36.0, 37.8);
+  const targetRaw = (doctorLiveTemp && doctorLiveTemp > 1) ? doctorLiveTemp : 36.6;
+  const target = clamp(targetRaw, 36.2, 37.2);
 
-  doctorLiveTempSeries.push(Number(next.toFixed(2)));
-  if (doctorLiveTempSeries.length > 500) doctorLiveTempSeries.shift();
+  let next = smoothTowards(last, target, 0.10);
+  next += rand(-0.01, 0.01);
+  next = clamp(next, 36.1, 37.3);
 
+  appendLivePoint(doctorLiveTempSeries, Number(next.toFixed(2)), 600);
   updateDoctorLiveSlider("temp");
 
   const slider = $("doctorTempRange");
