@@ -13,6 +13,77 @@ let selectedPatient = null;
 let doctorChart = null;
 let doctorActiveChartKey = null;
 
+/* ================= LIVE TIMERS ================= */
+let doctorLiveTimers = {
+  ekg: null,
+  hr: null,
+  temp: null,
+  ai: null
+};
+
+/* ================= SIMULATED AI ================= */
+let doctorSimulatedAi = {
+  id: 0,
+  ai_class: "0-Normal",
+  risk_level: "low",
+  risk_score: 0.10,
+  diagnosis: "Normal ritim",
+  model_name: "simulator_v1",
+  ai_comment: "Mevcut kayıt normal ritim özellikleri göstermektedir.",
+  created_at: new Date().toISOString()
+};
+
+/* ================= MODES ================= */
+const doctorMode = {
+  ekg: "history",
+  hr: "history",
+  temp: "history"
+};
+
+const doctorPausedByUser = {
+  ekg: false,
+  hr: false,
+  temp: false
+};
+
+/* ================= LIVE STATE ================= */
+const doctorLiveState = {
+  ekg: {
+    data: [],
+    labels: [],
+    counter: 0,
+    maxKeep: 2500,
+    windowSize: 320
+  },
+  hr: {
+    data: [],
+    labels: [],
+    counter: 0,
+    maxKeep: 1200,
+    windowSize: 120,
+    value: 76,
+    target: 78
+  },
+  temp: {
+    data: [],
+    labels: [],
+    counter: 0,
+    maxKeep: 1200,
+    windowSize: 120,
+    value: 36.60,
+    target: 36.62
+  }
+};
+
+/* ================= ECG SYNTH ================= */
+let doctorBeatTime = 0;
+const LIVE_ECG_DT = 0.05;
+const LIVE_HR_MS = 2000;
+const LIVE_TEMP_MS = 3000;
+const LIVE_AI_MS = 7000;
+let lastRealAiId = null;
+
+/* ================= CHART STATE ================= */
 const doctorChartState = {
   ekg: {
     points: [],
@@ -37,51 +108,6 @@ const doctorChartState = {
     infoId: "doctorTempRangeInfo",
     filterDays: 1,
     visibleSlice: []
-  }
-};
-
-const doctorMode = {
-  ekg: "history",
-  hr: "history",
-  temp: "history"
-};
-
-const doctorPausedByUser = {
-  ekg: false,
-  hr: false,
-  temp: false
-};
-
-const doctorLiveTimers = {
-  ekg: null,
-  hr: null,
-  temp: null
-};
-
-const doctorLiveData = {
-  ekg: [],
-  hr: [],
-  temp: []
-};
-
-const doctorMaxLivePoints = {
-  ekg: 1200,
-  hr: 800,
-  temp: 800
-};
-
-const doctorLiveGenerator = {
-  ekg: {
-    phase: 0,
-    sampleIntervalMs: 80
-  },
-  hr: {
-    value: 78,
-    drift: 0
-  },
-  temp: {
-    value: 36.60,
-    drift: 0
   }
 };
 
@@ -124,14 +150,47 @@ function formatShortDT(dtStr) {
   });
 }
 
+function nowShortTime() {
+  return new Date().toLocaleTimeString("tr-TR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
 function rand(min, max) {
   return Math.random() * (max - min) + min;
 }
 
-function clamp(val, min, max) {
-  return Math.max(min, Math.min(max, val));
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
+function smoothTowards(current, target, alpha) {
+  return current + (target - current) * alpha;
+}
+
+function appendLivePoint(key, label, value) {
+  const s = doctorLiveState[key];
+  s.labels.push(label);
+  s.data.push(value);
+
+  if (s.labels.length > s.maxKeep) {
+    s.labels.shift();
+    s.data.shift();
+  }
+}
+
+/* ================= AUTH ================= */
 async function loadMeDoctor() {
   try {
     const res = await fetch(`${API_URL}/users/me`, {
@@ -195,6 +254,7 @@ window.onPatientChange = async function () {
   if (!select) return;
 
   stopAllDoctorLiveModes(true);
+  stopDoctorAiAuto();
 
   const val = select.value;
 
@@ -216,6 +276,7 @@ window.onPatientChange = async function () {
     }
     doctorActiveChartKey = null;
 
+    clearDoctorAiBox();
     goHome();
     return;
   }
@@ -248,6 +309,7 @@ window.onPatientChange = async function () {
     doctorMode.ekg = "live";
     doctorMode.hr = "live";
     doctorMode.temp = "live";
+    initSimulatedAi();
   } else {
     doctorMode.ekg = "history";
     doctorMode.hr = "history";
@@ -256,9 +318,11 @@ window.onPatientChange = async function () {
 
   await loadLatestCommentSafe();
   await loadPatientOverview();
+  await loadDoctorAi();
   goHome();
 };
 
+/* ================= PAGE ================= */
 function hideAllPages() {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
 }
@@ -288,6 +352,12 @@ window.showSection = async function (id) {
   if (id === "temp") {
     await loadDoctorChart("temp");
   }
+  if (id === "ai") {
+    await loadDoctorAi();
+    startDoctorAiAuto();
+  } else {
+    stopDoctorAiAuto();
+  }
 };
 
 window.goHome = function () {
@@ -303,10 +373,12 @@ window.goHome = function () {
     doctorChart = null;
   }
   doctorActiveChartKey = null;
+  stopDoctorAiAuto();
 };
 
 window.logout = function (silent = false) {
   stopAllDoctorLiveModes(true);
+  stopDoctorAiAuto();
   localStorage.removeItem("token");
   localStorage.removeItem("role");
   if (!silent) alert("Çıkış yapıldı");
@@ -811,15 +883,168 @@ function generateDoctorLiveEkg() {
   const t = s.phase;
 
   let value = 0;
-  value += 0.10 * Math.exp(-Math.pow((t - 0.18) / 0.035, 2));  // P
-  value += -0.14 * Math.exp(-Math.pow((t - 0.36) / 0.012, 2)); // Q
-  value += 1.08 * Math.exp(-Math.pow((t - 0.40) / 0.008, 2));  // R
-  value += -0.28 * Math.exp(-Math.pow((t - 0.43) / 0.014, 2)); // S
-  value += 0.28 * Math.exp(-Math.pow((t - 0.68) / 0.06, 2));   // T
+  value += 0.10 * Math.exp(-Math.pow((t - 0.18) / 0.035, 2));
+  value += -0.14 * Math.exp(-Math.pow((t - 0.36) / 0.012, 2));
+  value += 1.08 * Math.exp(-Math.pow((t - 0.40) / 0.008, 2));
+  value += -0.28 * Math.exp(-Math.pow((t - 0.43) / 0.014, 2));
+  value += 0.28 * Math.exp(-Math.pow((t - 0.68) / 0.06, 2));
   value += 0.015 * Math.sin(Date.now() / 500);
   value += rand(-0.015, 0.015);
 
   return Number(value.toFixed(3));
+}
+
+/* ================= AI ================= */
+function clearDoctorAiBox() {
+  const ids = [
+    "docAiClass",
+    "docAiRisk",
+    "docAiScore",
+    "docAiDiagnosis",
+    "docAiModel",
+    "docAiComment",
+    "docAiTime"
+  ];
+  ids.forEach(id => {
+    const el = $(id);
+    if (el) el.textContent = "-";
+  });
+}
+
+function initSimulatedAi() {
+  doctorSimulatedAi = {
+    id: 1,
+    ai_class: "0-Normal",
+    risk_level: "low",
+    risk_score: 0.10,
+    diagnosis: "Normal ritim",
+    model_name: "simulator_v1",
+    ai_comment: "Mevcut kayıt normal ritim özellikleri göstermektedir.",
+    created_at: new Date().toISOString()
+  };
+}
+
+function generateSimulatedAiRecord() {
+  const scenarios = [
+    {
+      ai_class: "0-Normal",
+      risk_level: "low",
+      risk_score: 0.10,
+      diagnosis: "Normal ritim",
+      ai_comment: "Mevcut kayıt normal ritim özellikleri göstermektedir."
+    },
+    {
+      ai_class: "2-V (VEB/PVC)",
+      risk_level: "high",
+      risk_score: 0.84,
+      diagnosis: "Ventriküler anomali / PVC şüphesi",
+      ai_comment: "Ventriküler kaynaklı erken atım ile uyumlu bir patern saptandı."
+    },
+    {
+      ai_class: "4-Q (Signal quality low)",
+      risk_level: "medium",
+      risk_score: 0.32,
+      diagnosis: "Sinyal kalitesi düşük",
+      ai_comment: "Sinyal kalitesi düşük olduğu için güvenilir sınıflandırma yapılamadı."
+    },
+    {
+      ai_class: "1-S",
+      risk_level: "medium",
+      risk_score: 0.58,
+      diagnosis: "Supraventriküler anomali şüphesi",
+      ai_comment: "Supraventriküler kökenli ritim bozukluğu ile uyumlu bulgular gözlendi."
+    }
+  ];
+
+  const pick = scenarios[Math.floor(Math.random() * scenarios.length)];
+  doctorSimulatedAi = {
+    id: doctorSimulatedAi.id + 1,
+    ...pick,
+    model_name: "simulator_v1",
+    created_at: new Date().toISOString()
+  };
+}
+
+function renderDoctorAi(result) {
+  if (!result) {
+    clearDoctorAiBox();
+    return;
+  }
+
+  const set = (id, value) => {
+    const el = $(id);
+    if (el) el.textContent = value ?? "-";
+  };
+
+  set("docAiClass", result.ai_class);
+  set("docAiRisk", result.risk_level);
+  set("docAiScore", result.risk_score);
+  set("docAiDiagnosis", result.diagnosis);
+  set("docAiModel", result.model_name);
+  set("docAiComment", result.ai_comment);
+  set("docAiTime", formatDT(result.created_at));
+}
+
+async function loadDoctorAi() {
+  if (!selectedPatient) return;
+
+  if (isSimulatedPatient()) {
+    renderDoctorAi(doctorSimulatedAi);
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_URL}/matlab/analysis/patient/${selectedPatient.id}/latest`);
+    if (!res.ok) {
+      clearDoctorAiBox();
+      return;
+    }
+
+    const data = await res.json();
+    if (!data.result) {
+      clearDoctorAiBox();
+      return;
+    }
+
+    const currentId = data.result.id ?? data.result.created_at;
+    if (currentId !== lastRealAiId) {
+      lastRealAiId = currentId;
+      renderDoctorAi(data.result);
+    }
+
+  } catch (e) {
+    console.error("AI load error:", e);
+    clearDoctorAiBox();
+  }
+}
+
+function startDoctorAiAuto() {
+  stopDoctorAiAuto();
+
+  if (!selectedPatient) return;
+
+  if (isSimulatedPatient()) {
+    doctorLiveTimers.ai = setInterval(() => {
+      const aiPage = $("ai");
+      if (!aiPage || !aiPage.classList.contains("active")) return;
+      generateSimulatedAiRecord();
+      renderDoctorAi(doctorSimulatedAi);
+    }, LIVE_AI_MS);
+    return;
+  }
+
+  doctorLiveTimers.ai = setInterval(async () => {
+    const aiPage = $("ai");
+    if (!aiPage || !aiPage.classList.contains("active")) return;
+    await loadDoctorAi();
+  }, 5000);
+}
+
+function stopDoctorAiAuto() {
+  if (doctorLiveTimers.ai) {
+    clearInterval(doctorLiveTimers.ai);
+    doctorLiveTimers.ai = null;
+  }
 }
 
 /* ================= COMMENTS ================= */
@@ -988,12 +1213,3 @@ window.deleteComment = async function (commentId) {
     alert("Sunucuya bağlanılamadı");
   }
 };
-
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
