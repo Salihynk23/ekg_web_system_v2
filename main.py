@@ -12,22 +12,35 @@ models.Base.metadata.create_all(bind=engine)
 def seed_demo_users():
     db = SessionLocal()
     try:
-        hasta = db.query(models.User).filter(models.User.username == "hasta1").first()
-        if not hasta:
-            hasta = models.User(
+        hasta1 = db.query(models.User).filter(models.User.username == "hasta1").first()
+        if not hasta1:
+            hasta1 = models.User(
                 username="hasta1",
                 password=hash_password("1234"),
                 role="patient",
-                full_name="Demo Hasta",
+                full_name="Demo Hasta 1",
                 age=25,
                 height_cm=175,
                 weight_kg=70,
             )
-            db.add(hasta)
+            db.add(hasta1)
 
-        doktor = db.query(models.User).filter(models.User.username == "doktor1").first()
-        if not doktor:
-            doktor = models.User(
+        hasta2 = db.query(models.User).filter(models.User.username == "hasta2").first()
+        if not hasta2:
+            hasta2 = models.User(
+                username="hasta2",
+                password=hash_password("1234"),
+                role="patient",
+                full_name="Demo Hasta 2",
+                age=32,
+                height_cm=168,
+                weight_kg=74,
+            )
+            db.add(hasta2)
+
+        doktor1 = db.query(models.User).filter(models.User.username == "doktor1").first()
+        if not doktor1:
+            doktor1 = models.User(
                 username="doktor1",
                 password=hash_password("1234"),
                 role="doctor",
@@ -36,7 +49,7 @@ def seed_demo_users():
                 height_cm=180,
                 weight_kg=80,
             )
-            db.add(doktor)
+            db.add(doktor1)
 
         db.commit()
     finally:
