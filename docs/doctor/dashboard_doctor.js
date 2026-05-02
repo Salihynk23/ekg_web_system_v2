@@ -26,7 +26,6 @@ const doctorSimScenario = {
   crisisConfirmed: false
 };
 
-/* ================= LIVE TIMERS ================= */
 let doctorLiveTimers = {
   ekg: null,
   hr: null,
@@ -34,7 +33,6 @@ let doctorLiveTimers = {
   ai: null
 };
 
-/* ================= LIVE DATA ================= */
 const doctorLiveData = {
   ekg: [],
   hr: [],
@@ -62,7 +60,6 @@ const doctorLiveGenerator = {
   }
 };
 
-/* ================= SIMULATED AI ================= */
 let doctorSimulatedAi = {
   id: 0,
   ai_class: "0-Normal",
@@ -74,7 +71,6 @@ let doctorSimulatedAi = {
   created_at: new Date().toISOString()
 };
 
-/* ================= MODES ================= */
 const doctorMode = {
   ekg: "history",
   hr: "history",
@@ -87,7 +83,6 @@ const doctorPausedByUser = {
   temp: false
 };
 
-/* ================= CHART STATE ================= */
 const doctorChartState = {
   ekg: {
     points: [],
@@ -117,6 +112,7 @@ const doctorChartState = {
 
 document.addEventListener("DOMContentLoaded", async () => {
   goHome();
+  setHomeNoticeNormal();
   bindDoctorRangeInputs();
   await loadMeDoctor();
   await loadPatients();
@@ -172,6 +168,75 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
+/* ================= HOME NOTICE ================= */
+function updateHomeNotice({
+  title = "Panel Hazır",
+  text = "Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.",
+  badge = "NORMAL",
+  badgeBg = "rgba(80,255,160,.12)",
+  badgeColor = "#89ffb8",
+  badgeBorder = "rgba(80,255,160,.22)"
+} = {}) {
+  const titleEl = $("homeNoticeTitle");
+  const textEl = $("homeNoticeText");
+  const badgeEl = $("homeNoticeBadge");
+  const timeEl = $("homeNoticeTime");
+
+  if (titleEl) titleEl.textContent = title;
+  if (textEl) textEl.textContent = text;
+
+  if (badgeEl) {
+    badgeEl.textContent = badge;
+    badgeEl.style.background = badgeBg;
+    badgeEl.style.color = badgeColor;
+    badgeEl.style.borderColor = badgeBorder;
+  }
+
+  if (timeEl) {
+    timeEl.textContent = `Son güncelleme: ${new Date().toLocaleTimeString("tr-TR")}`;
+  }
+}
+
+function setHomeNoticeNormal() {
+  updateHomeNotice({
+    title: "Panel Hazır",
+    text: "Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.",
+    badge: "NORMAL",
+    badgeBg: "rgba(80,255,160,.12)",
+    badgeColor: "#89ffb8",
+    badgeBorder: "rgba(80,255,160,.22)"
+  });
+}
+
+function setHomeNoticePatientSelected() {
+  if (!selectedPatient) {
+    setHomeNoticeNormal();
+    return;
+  }
+
+  updateHomeNotice({
+    title: `${selectedPatient.username} aktif`,
+    text: isSimulatedPatient()
+      ? "Bu hasta için canlı simülasyon modu açık. Olası kritik durumlar ve AI teşhisi sistem tarafından dinamik olarak üretilecektir."
+      : "Bu hasta için gerçek backend verileri gösteriliyor. Güncel ölçümler ve AI analizi ilgili sayfalarda izlenebilir.",
+    badge: isSimulatedPatient() ? "SİMÜLASYON" : "GERÇEK VERİ",
+    badgeBg: isSimulatedPatient() ? "rgba(80,170,255,.14)" : "rgba(80,255,160,.12)",
+    badgeColor: isSimulatedPatient() ? "#8fc7ff" : "#89ffb8",
+    badgeBorder: isSimulatedPatient() ? "rgba(80,170,255,.25)" : "rgba(80,255,160,.22)"
+  });
+}
+
+function setHomeNoticeCritical() {
+  updateHomeNotice({
+    title: "Kritik Alarm Aktif",
+    text: "Süregelen kritik kardiyak durum algılandı. Acil müdahale protokolü tetiklendi. Hasta durumu derhal değerlendirilmelidir.",
+    badge: "KRİTİK",
+    badgeBg: "rgba(255,80,80,.14)",
+    badgeColor: "#ff9d9d",
+    badgeBorder: "rgba(255,80,80,.30)"
+  });
+}
+
 /* ================= EMERGENCY ================= */
 function resetDoctorSimScenario() {
   doctorSimScenario.sessionStartMs = Date.now();
@@ -222,11 +287,21 @@ function showEmergencyOverlay() {
       <strong>Eylem:</strong> Acil müdahale protokolü başlatılmalı
     `;
   }
+
+  setHomeNoticeCritical();
 }
 
 window.hideEmergencyOverlay = function () {
   const overlay = $("emergencyOverlay");
   if (overlay) overlay.style.display = "none";
+
+  if (isDoctorCriticalPhase()) {
+    setHomeNoticeCritical();
+  } else if (selectedPatient) {
+    setHomeNoticePatientSelected();
+  } else {
+    setHomeNoticeNormal();
+  }
 };
 
 function beepEmergency() {
@@ -236,20 +311,37 @@ function beepEmergency() {
     }
 
     const ctx = doctorAlarmAudioCtx;
-    const osc = ctx.createOscillator();
+    const start = ctx.currentTime;
+
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    osc.type = "sawtooth";
-    osc.frequency.value = 880;
+    osc1.type = "sawtooth";
+    osc2.type = "triangle";
 
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.24);
+    osc1.frequency.setValueAtTime(620, start);
+    osc1.frequency.linearRampToValueAtTime(880, start + 0.45);
+    osc1.frequency.linearRampToValueAtTime(620, start + 0.9);
 
-    osc.connect(gain);
+    osc2.frequency.setValueAtTime(480, start);
+    osc2.frequency.linearRampToValueAtTime(700, start + 0.45);
+    osc2.frequency.linearRampToValueAtTime(480, start + 0.9);
+
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.16, start + 0.03);
+    gain.gain.setValueAtTime(0.16, start + 0.75);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.95);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
     gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.26);
+
+    osc1.start(start);
+    osc2.start(start);
+
+    osc1.stop(start + 1.0);
+    osc2.stop(start + 1.0);
   } catch (e) {
     console.error("alarm beep error", e);
   }
@@ -355,6 +447,7 @@ window.onPatientChange = async function () {
     doctorActiveChartKey = null;
 
     clearDoctorAiBox();
+    setHomeNoticeNormal();
     goHome();
     return;
   }
@@ -399,6 +492,7 @@ window.onPatientChange = async function () {
   await loadLatestCommentSafe();
   await loadPatientOverview();
   await loadDoctorAi();
+  setHomeNoticePatientSelected();
   goHome();
 };
 
@@ -925,7 +1019,6 @@ function generateDoctorLiveEkg() {
   while (s.phase >= 1) s.phase -= 1;
 
   const t = s.phase;
-
   let value = 0;
 
   if (isDoctorCriticalPhase()) {

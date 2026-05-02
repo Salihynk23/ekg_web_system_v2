@@ -55,12 +55,94 @@
     <button id="backBtn" class="back-btn hidden" onclick="goHome()">← Geri</button>
 
     <section id="home" class="page active">
-      <div class="center-screen">
-        <div>
-          <h2>🩺 Doktor Paneline Hoş Geldin</h2>
-          <p style="color: var(--muted); max-width:520px;">
-            Soldan bir hasta seçtiğinde menü açılacak ve verileri görüntüleyebileceksin.
-          </p>
+      <div class="center-screen" style="align-items:stretch;">
+        <div style="
+          width:min(980px, 100%);
+          display:grid;
+          grid-template-columns: 1.2fr .8fr;
+          gap:18px;
+          align-items:stretch;
+        ">
+          <div class="patient-card" style="
+            min-height:260px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            text-align:center;
+          ">
+            <div>
+              <h2>🩺 Doktor Paneline Hoş Geldin</h2>
+              <p style="color: var(--muted); max-width:520px; margin:10px auto 0;">
+                Soldan bir hasta seçtiğinde menü açılacak ve verileri görüntüleyebileceksin.
+              </p>
+            </div>
+          </div>
+
+          <div id="homeNoticeCard" class="patient-card" style="
+            min-height:260px;
+            display:flex;
+            flex-direction:column;
+            justify-content:space-between;
+            border:1px solid rgba(255,255,255,.08);
+          ">
+            <div>
+              <div style="
+                font-size:13px;
+                letter-spacing:.08em;
+                text-transform:uppercase;
+                color:var(--muted);
+                margin-bottom:8px;
+                font-weight:700;
+              ">
+                Sistem Bildirimi
+              </div>
+
+              <div id="homeNoticeTitle" style="
+                font-size:28px;
+                font-weight:900;
+                line-height:1.15;
+                margin-bottom:12px;
+              ">
+                Panel Hazır
+              </div>
+
+              <div id="homeNoticeText" style="
+                font-size:16px;
+                line-height:1.7;
+                color:#dce4ff;
+              ">
+                Henüz aktif bir alarm bulunmuyor. Hasta seçimi yaptıktan sonra sistem durumu burada özetlenecek.
+              </div>
+            </div>
+
+            <div style="
+              display:flex;
+              align-items:center;
+              justify-content:space-between;
+              gap:12px;
+              margin-top:18px;
+              flex-wrap:wrap;
+            ">
+              <div id="homeNoticeBadge" style="
+                background:rgba(80,255,160,.12);
+                color:#89ffb8;
+                border:1px solid rgba(80,255,160,.22);
+                border-radius:999px;
+                padding:8px 12px;
+                font-size:13px;
+                font-weight:800;
+              ">
+                NORMAL
+              </div>
+
+              <div id="homeNoticeTime" style="
+                color:var(--muted);
+                font-size:13px;
+              ">
+                Güncelleme bekleniyor
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
